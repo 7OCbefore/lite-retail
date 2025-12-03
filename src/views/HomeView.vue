@@ -18,7 +18,7 @@ const handleFeatureNotReady = () => {
 <template>
   <div class="min-h-screen bg-gray-50">
     <!-- 1. 顶部标题栏 -->
-    <van-nav-bar title="老张的便利店" :border="false" class="!bg-transparent" />
+    <van-nav-bar title="Lite-Retail" :border="false" class="!bg-transparent" />
 
     <div class="p-4 space-y-6">
       <!-- 2. 数据概览卡片 (自定义样式) -->
