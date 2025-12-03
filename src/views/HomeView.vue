@@ -88,6 +88,7 @@ const handleFeatureNotReady = () => {
           <van-grid-item 
             icon="shop-o" 
             text="店铺信息" 
+            badge="New"
             @click="handleFeatureNotReady" 
           />
           
