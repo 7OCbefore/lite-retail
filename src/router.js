@@ -1,11 +1,11 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import HomeView from './views/HomeView.vue'
 import PosView from './views/PosView.vue'
 import ProductView from './views/ProductView.vue'
 import ReportView from './views/ReportView.vue' // <--- 1. 引入
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes: [
     { path: '/', component: HomeView },
     { path: '/pos', component: PosView },

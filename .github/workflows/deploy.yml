@@ -1,0 +1,74 @@
+# 脚本名称
+name: Deploy to GitHub Pages
+
+# 触发条件：当推送到 main 分支时触发
+on:
+  push:
+    branches: ["main"]
+  # 允许手动在 Actions 页面触发
+  workflow_dispatch:
+
+# 权限设置
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 并发控制：防止多个构建同时进行
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  # 构建任务
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (拉取代码)
+        uses: actions/checkout@v4
+
+      - name: Setup Node (安装 Node.js)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: 'npm'
+
+      - name: Install dependencies (安装依赖)
+        run: npm ci # 使用 ci 比 install 更快更稳定
+
+      - name: Build (打包项目)
+        run: npm run build
+
+      - name: Upload artifact (上传打包好的文件)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist # Vite 默认打包输出到 dist 目录
+
+  # 部署任务
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages (发布到 GitHub Pages)
+        id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+## 第四步：推送代码到 GitHub
+
+如果你还没把代码传到 GitHub，现在请操作：
+
+1.  去 [GitHub](https://github.com/new) 新建一个仓库，名字叫 `lite-retail` (要和第二步填的一致)。
+2.  在你的项目终端里依次执行：
+
+```bash
+git init
+git add .
+git commit -m "feat: 准备部署"
+# 下面这行换成你自己的仓库地址
+git remote add origin https://github.com/7OCbefore/lite-retail.git
+git branch -M main
+git push -u origin main
