@@ -11,39 +11,23 @@ const store = useShopStore();
 const videoEl = ref(null);
 const isScanning = ref(false);
 const scanError = ref('');
-const supportsFocus = ref(false);
-const focusSupported = ref(false);
 
-// --- 摄像头逻辑 ---
+// --- 摄像头逻辑 (保持不变) ---
 const startCamera = async () => {
   scanError.value = '';
   try {
-    const constraints = {
-      video: { 
-        facingMode: 'environment',
-        focusMode: 'continuous'
-      }
-    };
-    
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
     if (videoEl.value) {
       videoEl.value.srcObject = stream;
       videoEl.value.play();
       isScanning.value = true;
-      
-      // 检查是否支持对焦功能
-      const [track] = stream.getVideoTracks();
-      if (track) {
-        const capabilities = track.getCapabilities();
-        focusSupported.value = 'focusMode' in capabilities || 'focusDistance' in capabilities;
-        supportsFocus.value = focusSupported.value;
-      }
-      
       detectBarcode();
     }
   } catch (err) {
     scanError.value = '无法启动摄像头，请检查权限';
-    showFailToast('摄像头启动失败');
+    showFailToast('摄像头启动失败'); // 使用 Toast 提示
   }
 };
 
@@ -66,22 +50,6 @@ const detectBarcode = async () => {
     if (barcodes.length > 0) handleScanSuccess(barcodes[0].rawValue);
   } catch (e) {}
   requestAnimationFrame(detectBarcode);
-};
-
-// 添加手动对焦功能
-const manualFocus = async () => {
-  if (!videoEl.value || !videoEl.value.srcObject) return;
-  
-  try {
-    const [track] = videoEl.value.srcObject.getVideoTracks();
-    if (track && 'applyConstraints' in track) {
-      await track.applyConstraints({
-        advanced: [{ torch: true }]
-      });
-    }
-  } catch (err) {
-    console.log('无法启用对焦:', err);
-  }
 };
 
 // --- 业务逻辑 ---
@@ -184,12 +152,12 @@ onUnmounted(() => stopCamera());
       <video ref="videoEl" class="w-full h-full object-cover opacity-80" muted playsinline></video>
       
       <div v-if="isScanning" class="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div class="w-80 h-40 border-4 border-green-500 rounded-xl relative bg-white/10 backdrop-blur-[2px] shadow-[0_0_20px_rgba(72,187,120,0.7)]">
-          <div class="absolute w-full h-1 bg-gradient-to-r from-transparent via-red-500 to-transparent animate-scan"></div>
+        <div class="w-64 h-32 border-2 border-green-400 rounded-lg relative bg-white/10 backdrop-blur-[2px]">
+          <div class="absolute w-full h-0.5 bg-red-500 animate-[scan_2s_infinite]"></div>
         </div>
       </div>
 
-      <div class="absolute bottom-4 w-full flex justify-center z-20 space-x-4">
+      <div class="absolute bottom-4 w-full flex justify-center z-20">
         <van-button 
           v-if="!isScanning" 
           type="primary" 
@@ -208,19 +176,6 @@ onUnmounted(() => stopCamera());
           @click="stopCamera"
         >
           停止扫描
-        </van-button>
-        
-        <!-- 手动对焦按钮 -->
-        <van-button
-          v-if="isScanning && supportsFocus"
-          type="info"
-          round
-          size="small"
-          icon="aim"
-          class="!bg-blue-500 !border-none !backdrop-blur"
-          @click="manualFocus"
-        >
-          对焦
         </van-button>
       </div>
       
@@ -264,23 +219,8 @@ onUnmounted(() => stopCamera());
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 @keyframes scan {
-  0% { 
-    top: 5%;
-    opacity: 0.2;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% { 
-    top: 95%;
-    opacity: 0.2;
-  }
-}
-
-.animate-scan {
-  animation: scan 1.5s ease-in-out infinite;
+  0% { top: 10%; opacity: 0; }
+  50% { opacity: 1; }
+  100% { top: 90%; opacity: 0; }
 }
 </style>
