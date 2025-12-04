@@ -79,68 +79,74 @@ export const useShopStore = defineStore('shop', () => {
   // 核心修改：使用 Supabase Edge Function
   const enrichProductInfo = async (barcode) => {
     try {
-      // 1. 加一个弹窗，确认函数被触发了
-      // alert('正在请求云函数: ' + barcode); 
-
       const { data, error } = await supabase.functions.invoke('fetch-product', {
         body: { barcode }
       })
 
-      // 2. 如果调用本身出错（比如 Key 错、网络断），记录错误并返回 null
+      // 1. 错误处理
       if (error) {
         console.error('云函数调用报错:', error);
         showToast('网络查询失败，请手动编辑商品');
         return null;
       }
 
-      // 3. 如果调用成功，但逻辑判断没查到
       if (data && !data.found) {
-        // 记录未找到原因（用于调试）
         const reason = data.reason || data.error || '未知原因';
         console.warn('云端查询未找到商品:', reason);
-        // 不显示 toast，前端会显示"未找到网络信息"
         return null;
       }
 
-      // 4. 如果成功
+      // 2. 成功获取数据
       if (data && data.found) {
-        // alert('✅ 查询成功: ' + data.name); // 调试成功后这行可以删掉
+        // 组合名称和规格，例如 "可口可乐 (330ml)"
         const goodsName = data.name + (data.spec ? ` (${data.spec})` : '')
+        const safePrice = parseFloat(data.price) || 0
 
-        // 更新本地商品库和购物车（防止覆盖用户手动编辑）
+        // 查找本地商品
         const product = products.value.find(p => p.barcode === barcode);
+        
+        // ★★★ 关键修正 1：先判断是否需要更新云端（在修改本地数据之前！）
+        let shouldUpdateCloud = false;
         if (product) {
-          // 只有商品名称是占位符时才更新
           if (product.name.includes('正在查询') || product.name.includes('未命名')) {
-            product.name = data.name;
-            product.price = parseFloat(data.price) || 0;
+            shouldUpdateCloud = true; // 标记：这个商品是新的，需要存到云端
           }
         }
 
-        // 更新购物车
+        // 3. 更新本地商品库
+        if (shouldUpdateCloud && product) {
+          product.name = goodsName; // ★★★ 关键修正 2：使用带规格的完整名称
+          product.price = safePrice;
+        }
+
+        // 4. 更新购物车 (确保收银员马上看到变化)
         const cartItem = cart.value.find(i => i.barcode === barcode);
         if (cartItem) {
-          // 购物车项名称检查同理
           if (cartItem.name.includes('正在查询') || cartItem.name.includes('未命名')) {
-            cartItem.name = data.name;
-            cartItem.price = parseFloat(data.price) || 0;
+            cartItem.name = goodsName;
+            cartItem.price = safePrice;
           }
         }
 
-        // 同步到 Supabase（使用 upsert）
-        if (product && (product.name.includes('正在查询') || product.name.includes('未命名'))) {
+        // 5. 同步到 Supabase
+        // 使用刚才记录的 flag 来判断，而不是再次检查 product.name (因为它已经被改掉了)
+        if (shouldUpdateCloud) {
           const productData = {
             barcode: barcode,
-            name: data.name,
-            price: parseFloat(data.price) || 0,
-            stock: product.stock || 999,
+            name: goodsName, // 使用完整名称
+            price: safePrice,
+            stock: product?.stock || 999,
           };
+          
           // 复制其他可能存在的字段
-          Object.keys(product).forEach(key => {
-            if (!productData.hasOwnProperty(key)) {
-              productData[key] = product[key];
-            }
-          });
+          if (product) {
+            Object.keys(product).forEach(key => {
+              if (!productData.hasOwnProperty(key)) {
+                productData[key] = product[key];
+              }
+            });
+          }
+
           supabase.from('products').upsert(productData, { onConflict: 'barcode' }).then(({ error }) => {
             if (error) console.error('云端更新商品失败', error);
           });
@@ -150,9 +156,7 @@ export const useShopStore = defineStore('shop', () => {
       }
       
     } catch (e) {
-      // 5. 捕获所有未知错误
       console.error('云函数调用失败:', e);
-      // 不显示 toast，避免干扰用户，前端会显示"未找到网络信息"
     }
     return null
   }
