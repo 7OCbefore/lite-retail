@@ -18,15 +18,15 @@ const videoTrack = ref(null);
 const searchKeyword = ref('');
 const searchResults = computed(() => {
   if (!searchKeyword.value.trim()) return [];
-  
+
   const query = searchKeyword.value.trim();
-  
+
   return store.products.filter(item => {
     // 匹配名称
     const nameMatch = item.name.toLowerCase().includes(query.toLowerCase());
     // 匹配条码（使用 includes 容错性更好）
     const barcodeMatch = item.barcode.includes(query);
-    
+
     return nameMatch || barcodeMatch;
   });
 });
@@ -53,19 +53,19 @@ const startCamera = async () => {
         advanced: [{ focusMode: 'continuous' }]
       }
     };
-    
+
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     if (videoEl.value) {
       videoEl.value.srcObject = stream;
       videoEl.value.play();
       isScanning.value = true;
-      
+
       // 获取视频轨道用于手电筒控制
       const tracks = stream.getVideoTracks();
       if (tracks.length > 0) {
         videoTrack.value = tracks[0];
       }
-      
+
       detectBarcode();
     }
   } catch (err) {
@@ -86,18 +86,18 @@ const stopCamera = () => {
 // 新增手电筒控制功能
 const toggleTorch = async () => {
   if (!videoTrack.value) return;
-  
+
   try {
     const capabilities = videoTrack.value.getCapabilities();
     if (!capabilities.torch) {
       showFailToast('当前设备不支持手电筒功能');
       return;
     }
-    
+
     await videoTrack.value.applyConstraints({
       advanced: [{ torch: !isTorchOn.value }]
     });
-    
+
     isTorchOn.value = !isTorchOn.value;
   } catch (err) {
     showFailToast('无法切换手电筒');
@@ -107,17 +107,17 @@ const toggleTorch = async () => {
 // 点击对焦功能
 const handleVideoClick = async (event) => {
   if (!videoEl.value || !videoTrack.value) return;
-  
+
   // 创建对焦动画元素
   const focusEl = document.createElement('div');
   focusEl.className = 'focus-animation';
   focusEl.style.left = `${event.clientX - 30}px`;
   focusEl.style.top = `${event.clientY - 30}px`;
-  
+
   const scannerArea = document.querySelector('.scanner-overlay');
   if (scannerArea) {
     scannerArea.appendChild(focusEl);
-    
+
     // 移除动画元素
     setTimeout(() => {
       if (focusEl.parentNode) {
@@ -125,7 +125,7 @@ const handleVideoClick = async (event) => {
       }
     }, 1000);
   }
-  
+
   // 尝试触发重新对焦
   try {
     await videoTrack.value.applyConstraints({
@@ -146,7 +146,7 @@ const detectBarcode = async () => {
     const detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8'] });
     const barcodes = await detector.detect(videoEl.value);
     if (barcodes.length > 0) handleScanSuccess(barcodes[0].rawValue);
-  } catch (e) {}
+  } catch (e) { }
   requestAnimationFrame(detectBarcode);
 };
 
@@ -171,33 +171,44 @@ const syncCartWithProducts = () => {
 // --- 业务逻辑：扫码成功 ---
 const handleScanSuccess = async (code) => {
   const product = store.findProduct(code);
-  
+
   // 情况 A: 这是一个新商品 (本地没有)
   if (!product) {
     // 1. 先创建一个“临时工”占位，让收银员能看到东西进来了
     const newItem = {
       barcode: code,
       name: `正在查询... (${code.slice(-4)})`, // 名字暂时显示“正在查询”
-      price: 0, 
-      stock: 999 
+      price: 0,
+      stock: 999
     };
-    
+
     // 2. 加入本地库和购物车
     store.addProduct(newItem);
     store.cart.unshift({ ...newItem, qty: 1 });
     beep(); // 滴一声
-    
+
     // 3. 【新增步骤】去网上查一下它是谁
     store.enrichProductInfo(code).then((realName) => {
       if (realName) {
-        // 如果查到了，弹个窗告诉收银员
         showSuccessToast(`已识别：${realName}`);
       } else {
-        // 没查到，提示收银员自己填
         showToast('未找到网络信息，请手动编辑');
+
+        // --- 新增修复代码 ---
+        // 1. 找到购物车里那个还在"正在查询"的商品
+        const cartItem = store.cart.find(item => item.barcode === code);
+        if (cartItem && cartItem.name.includes('正在查询')) {
+          cartItem.name = '未找到商品 (点击编辑)'; // 或者直接显示 '新商品'
+        }
+
+        // 2. 同时更新商品库里的记录，防止下次扫同一个码还是"正在查询"
+        const product = store.products.find(p => p.barcode === code);
+        if (product && product.name.includes('正在查询')) {
+          product.name = '未找到商品';
+        }
       }
     });
-    
+
     // 4. 防止重复扫码的冷却时间
     isScanning.value = false;
     setTimeout(() => isScanning.value = true, 3000); // 新商品多停一会，给3秒
@@ -213,7 +224,7 @@ const handleScanSuccess = async (code) => {
   } else {
     store.cart.unshift({ ...product, qty: 1 }); // 加进购物车
   }
-  
+
   showToast({
     message: `+1 ${product.name}`,
     position: 'bottom',
@@ -232,13 +243,13 @@ const addItemFromSearch = (product) => {
   } else {
     store.cart.unshift({ ...product, qty: 1 });
   }
-  
+
   showToast({
     message: `已添加：${product.name}`,
     position: 'bottom',
     duration: 800
   });
-  
+
   // 清空搜索关键字，关闭搜索结果列表
   searchKeyword.value = '';
 };
@@ -307,13 +318,7 @@ onUnmounted(() => stopCamera());
 <template>
   <div class="h-screen flex flex-col bg-gray-50">
     <!-- 1. Vant 导航栏 -->
-    <van-nav-bar
-      title="收银台"
-      left-text="返回"
-      left-arrow
-      @click-left="router.push('/')"
-      @click-right="store.cart = []"
-    >
+    <van-nav-bar title="收银台" left-text="返回" left-arrow @click-left="router.push('/')" @click-right="store.cart = []">
       <template #right>
         <span class="text-red-500">清空</span>
       </template>
@@ -321,27 +326,14 @@ onUnmounted(() => stopCamera());
 
     <!-- 2. 搜索框 -->
     <div class="p-2 bg-white">
-      <van-search
-        v-model="searchKeyword"
-        placeholder="输入商品名称或条码"
-        shape="round"
-        background="transparent"
-      />
-      
+      <van-search v-model="searchKeyword" placeholder="输入商品名称或条码" shape="round" background="transparent" />
+
       <!-- 搜索结果列表 -->
-      <div 
-        v-if="searchKeyword" 
-        class="absolute left-0 right-0 bg-white z-10 shadow-lg max-h-60 overflow-y-auto"
-        style="top: 110px"
-      >
+      <div v-if="searchKeyword" class="absolute left-0 right-0 bg-white z-10 shadow-lg max-h-60 overflow-y-auto"
+        style="top: 110px">
         <van-empty v-if="searchResults.length === 0" description="未找到商品" />
-        
-        <van-cell
-          v-for="product in searchResults"
-          :key="product.barcode"
-          clickable
-          @click="addItemFromSearch(product)"
-        >
+
+        <van-cell v-for="product in searchResults" :key="product.barcode" clickable @click="addItemFromSearch(product)">
           <div class="flex justify-between items-center">
             <div>
               <div class="font-medium">{{ product.name }}</div>
@@ -355,22 +347,13 @@ onUnmounted(() => stopCamera());
 
     <!-- 3. 扫描区域 -->
     <div class="relative bg-black h-56 flex-shrink-0 overflow-hidden">
-      <video 
-        ref="videoEl" 
-        class="w-full h-full object-cover" 
-        muted 
-        playsinline
-        @click="handleVideoClick"
-      ></video>
-      
+      <video ref="videoEl" class="w-full h-full object-cover" muted playsinline @click="handleVideoClick"></video>
+
       <!-- 扫描遮罩层 -->
-      <div 
-        v-if="isScanning" 
-        class="scanner-overlay absolute inset-0 pointer-events-none"
-      >
+      <div v-if="isScanning" class="scanner-overlay absolute inset-0 pointer-events-none">
         <!-- 四周半透明遮罩 -->
         <div class="scanner-mask"></div>
-        
+
         <!-- 中间透明扫描区域 -->
         <div class="scanner-box">
           <!-- 扫描框四角装饰 -->
@@ -378,68 +361,49 @@ onUnmounted(() => stopCamera());
           <div class="scanner-corner top-right"></div>
           <div class="scanner-corner bottom-left"></div>
           <div class="scanner-corner bottom-right"></div>
-          
+
           <!-- 扫描线动画 -->
           <div class="scanner-line"></div>
         </div>
       </div>
 
       <div class="absolute bottom-4 w-full flex justify-center z-20 gap-4">
-        <van-button 
-          v-if="!isScanning" 
-          type="primary" 
-          round 
-          icon="scan" 
-          @click="startCamera"
-        >
+        <van-button v-if="!isScanning" type="primary" round icon="scan" @click="startCamera">
           启动摄像头
         </van-button>
-        <van-button 
-          v-else 
-          type="default" 
-          round 
-          size="small" 
-          class="!bg-white/80 !border-none !backdrop-blur"
-          @click="stopCamera"
-        >
+        <van-button v-else type="default" round size="small" class="!bg-white/80 !border-none !backdrop-blur"
+          @click="stopCamera">
           停止扫描
         </van-button>
-        
+
         <!-- 手电筒按钮 -->
-        <van-button
-          v-if="isScanning"
-          type="default"
-          round
-          size="small"
-          class="!bg-white/80 !border-none !backdrop-blur"
-          :class="{ 'torch-on': isTorchOn }"
-          @click="toggleTorch"
-        >
+        <van-button v-if="isScanning" type="default" round size="small" class="!bg-white/80 !border-none !backdrop-blur"
+          :class="{ 'torch-on': isTorchOn }" @click="toggleTorch">
           <template #icon>
             <svg viewBox="0 0 1024 1024" width="1em" height="1em" class="torch-icon">
-              <path v-if="!isTorchOn" d="M384 320h256v64H384zM448 256h128v64H448zM384 640h256v64H384zM384 480h256v64H384z" fill="currentColor"/>
-              <path v-else d="M448 128h128v64H448zM384 256h256v64H384zM384 384h256v64H384zM384 512h256v64H384zM384 640h256v64H384z" fill="currentColor"/>
+              <path v-if="!isTorchOn"
+                d="M384 320h256v64H384zM448 256h128v64H448zM384 640h256v64H384zM384 480h256v64H384z"
+                fill="currentColor" />
+              <path v-else
+                d="M448 128h128v64H448zM384 256h256v64H384zM384 384h256v64H384zM384 512h256v64H384zM384 640h256v64H384z"
+                fill="currentColor" />
             </svg>
           </template>
           手电筒
         </van-button>
       </div>
-      
-      <div v-if="scanError" class="absolute top-0 w-full bg-red-500 text-white text-xs p-2 text-center">{{ scanError }}</div>
+
+      <div v-if="scanError" class="absolute top-0 w-full bg-red-500 text-white text-xs p-2 text-center">{{ scanError }}
+      </div>
     </div>
 
     <!-- 4. 购物车列表 (Vant Card) -->
     <div class="flex-1 overflow-y-auto p-2 pb-20 space-y-2">
       <van-empty v-if="store.cart.length === 0" description="请扫描商品" />
 
-      <van-card
-        v-for="item in store.cart"
-        :key="item.barcode"
-        :price="item.price.toFixed(2)"
-        :title="item.name"
+      <van-card v-for="item in store.cart" :key="item.barcode" :price="item.price.toFixed(2)" :title="item.name"
         :desc="item.barcode"
-        thumb="[https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg](https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg)"
-      >
+        thumb="[https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg](https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg)">
         <!-- 使用 Vant 的 Stepper 步进器控制数量 -->
         <template #num>
           <van-stepper v-model="item.qty" theme="round" button-size="22" disable-input />
@@ -452,42 +416,15 @@ onUnmounted(() => stopCamera());
     </div>
 
     <!-- 5. Vant 提交订单栏 -->
-    <van-submit-bar
-      :price="totalPriceInCents"
-      button-text="收款"
-      @submit="handleCheckout"
-    />
+    <van-submit-bar :price="totalPriceInCents" button-text="收款" @submit="handleCheckout" />
 
     <!-- 编辑商品对话框 -->
-    <van-dialog
-      v-model:show="showEditDialog"
-      title="编辑商品"
-      show-cancel-button
-      @confirm="saveEdit"
-    >
+    <van-dialog v-model:show="showEditDialog" title="编辑商品" show-cancel-button @confirm="saveEdit">
       <div class="p-4 space-y-3">
-        <van-field
-          v-model="editForm.barcode"
-          label="条形码"
-          readonly
-        />
-        <van-field
-          v-model="editForm.name"
-          label="商品名称"
-          placeholder="请输入商品名称"
-        />
-        <van-field
-          v-model="editForm.price"
-          label="价格"
-          type="number"
-          placeholder="请输入价格"
-        />
-        <van-field
-          v-model="editForm.stock"
-          label="库存"
-          type="number"
-          placeholder="请输入库存"
-        />
+        <van-field v-model="editForm.barcode" label="条形码" readonly />
+        <van-field v-model="editForm.name" label="商品名称" placeholder="请输入商品名称" />
+        <van-field v-model="editForm.price" label="价格" type="number" placeholder="请输入价格" />
+        <van-field v-model="editForm.stock" label="库存" type="number" placeholder="请输入库存" />
       </div>
     </van-dialog>
   </div>
@@ -498,7 +435,7 @@ onUnmounted(() => stopCamera());
 :deep(.van-card) {
   background-color: white;
   border-radius: 12px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 /* 扫描区域样式 */
@@ -568,7 +505,7 @@ onUnmounted(() => stopCamera());
   left: 0;
   width: 100%;
   height: 2px;
-  background: linear-gradient(to bottom, rgba(0,255,0,0) 0%, rgba(0,255,0,0.8) 50%, rgba(0,255,0,0) 100%);
+  background: linear-gradient(to bottom, rgba(0, 255, 0, 0) 0%, rgba(0, 255, 0, 0.8) 50%, rgba(0, 255, 0, 0) 100%);
   animation: scanning 2s ease-in-out infinite;
   box-shadow: 0 0 8px rgba(0, 255, 0, 0.6);
 }
@@ -578,12 +515,15 @@ onUnmounted(() => stopCamera());
     top: 0;
     opacity: 0;
   }
+
   10% {
     opacity: 1;
   }
+
   90% {
     opacity: 1;
   }
+
   100% {
     top: 100%;
     opacity: 0;
@@ -605,6 +545,7 @@ onUnmounted(() => stopCamera());
     transform: scale(1.2);
     opacity: 1;
   }
+
   100% {
     transform: scale(0.8);
     opacity: 0;
@@ -621,4 +562,3 @@ onUnmounted(() => stopCamera());
   height: 1em;
 }
 </style>
-
