@@ -11,6 +11,25 @@ const store = useShopStore();
 const videoEl = ref(null);
 const isScanning = ref(false);
 const scanError = ref('');
+const isTorchOn = ref(false);
+const videoTrack = ref(null);
+
+// 搜索相关
+const searchKeyword = ref('');
+const searchResults = computed(() => {
+  if (!searchKeyword.value.trim()) return [];
+  
+  const query = searchKeyword.value.trim();
+  
+  return store.products.filter(item => {
+    // 匹配名称
+    const nameMatch = item.name.toLowerCase().includes(query.toLowerCase());
+    // 匹配条码（使用 includes 容错性更好）
+    const barcodeMatch = item.barcode.includes(query);
+    
+    return nameMatch || barcodeMatch;
+  });
+});
 
 // 编辑相关
 const editingItem = ref(null);
@@ -26,13 +45,27 @@ const showEditDialog = ref(false);
 const startCamera = async () => {
   scanError.value = '';
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment' }
-    });
+    const constraints = {
+      video: {
+        facingMode: 'environment',
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        advanced: [{ focusMode: 'continuous' }]
+      }
+    };
+    
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
     if (videoEl.value) {
       videoEl.value.srcObject = stream;
       videoEl.value.play();
       isScanning.value = true;
+      
+      // 获取视频轨道用于手电筒控制
+      const tracks = stream.getVideoTracks();
+      if (tracks.length > 0) {
+        videoTrack.value = tracks[0];
+      }
+      
       detectBarcode();
     }
   } catch (err) {
@@ -45,6 +78,61 @@ const stopCamera = () => {
   if (videoEl.value && videoEl.value.srcObject) {
     videoEl.value.srcObject.getTracks().forEach(t => t.stop());
     isScanning.value = false;
+    isTorchOn.value = false;
+    videoTrack.value = null;
+  }
+};
+
+// 新增手电筒控制功能
+const toggleTorch = async () => {
+  if (!videoTrack.value) return;
+  
+  try {
+    const capabilities = videoTrack.value.getCapabilities();
+    if (!capabilities.torch) {
+      showFailToast('当前设备不支持手电筒功能');
+      return;
+    }
+    
+    await videoTrack.value.applyConstraints({
+      advanced: [{ torch: !isTorchOn.value }]
+    });
+    
+    isTorchOn.value = !isTorchOn.value;
+  } catch (err) {
+    showFailToast('无法切换手电筒');
+  }
+};
+
+// 点击对焦功能
+const handleVideoClick = async (event) => {
+  if (!videoEl.value || !videoTrack.value) return;
+  
+  // 创建对焦动画元素
+  const focusEl = document.createElement('div');
+  focusEl.className = 'focus-animation';
+  focusEl.style.left = `${event.clientX - 30}px`;
+  focusEl.style.top = `${event.clientY - 30}px`;
+  
+  const scannerArea = document.querySelector('.scanner-overlay');
+  if (scannerArea) {
+    scannerArea.appendChild(focusEl);
+    
+    // 移除动画元素
+    setTimeout(() => {
+      if (focusEl.parentNode) {
+        focusEl.parentNode.removeChild(focusEl);
+      }
+    }, 1000);
+  }
+  
+  // 尝试触发重新对焦
+  try {
+    await videoTrack.value.applyConstraints({
+      advanced: [{ focusMode: 'continuous' }]
+    });
+  } catch (err) {
+    // 对焦失败无需特殊处理
   }
 };
 
@@ -130,6 +218,25 @@ const handleScanSuccess = (code) => {
   setTimeout(() => isScanning.value = true, 1000);
 };
 
+// 从搜索结果添加商品到购物车
+const addItemFromSearch = (product) => {
+  const existing = store.cart.find(item => item.barcode === product.barcode);
+  if (existing) {
+    existing.qty++;
+  } else {
+    store.cart.unshift({ ...product, qty: 1 });
+  }
+  
+  showToast({
+    message: `已添加：${product.name}`,
+    position: 'bottom',
+    duration: 800
+  });
+  
+  // 清空搜索关键字，关闭搜索结果列表
+  searchKeyword.value = '';
+};
+
 // 结算逻辑 (对接 Vant SubmitBar)
 const handleCheckout = () => {
   if (store.cart.length === 0) {
@@ -206,17 +313,72 @@ onUnmounted(() => stopCamera());
       </template>
     </van-nav-bar>
 
-    <!-- 2. 扫描区域 -->
-    <div class="relative bg-black h-56 flex-shrink-0 overflow-hidden">
-      <video ref="videoEl" class="w-full h-full object-cover opacity-80" muted playsinline></video>
+    <!-- 2. 搜索框 -->
+    <div class="p-2 bg-white">
+      <van-search
+        v-model="searchKeyword"
+        placeholder="输入商品名称或条码"
+        shape="round"
+        background="transparent"
+      />
       
-      <div v-if="isScanning" class="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div class="w-64 h-32 border-2 border-green-400 rounded-lg relative bg-white/10 backdrop-blur-[2px]">
-          <div class="absolute w-full h-0.5 bg-red-500 animate-[scan_2s_infinite]"></div>
+      <!-- 搜索结果列表 -->
+      <div 
+        v-if="searchKeyword" 
+        class="absolute left-0 right-0 bg-white z-10 shadow-lg max-h-60 overflow-y-auto"
+        style="top: 110px"
+      >
+        <van-empty v-if="searchResults.length === 0" description="未找到商品" />
+        
+        <van-cell
+          v-for="product in searchResults"
+          :key="product.barcode"
+          clickable
+          @click="addItemFromSearch(product)"
+        >
+          <div class="flex justify-between items-center">
+            <div>
+              <div class="font-medium">{{ product.name }}</div>
+              <div class="text-gray-500 text-sm">{{ product.barcode }}</div>
+            </div>
+            <div class="text-red-500 font-bold">¥{{ product.price.toFixed(2) }}</div>
+          </div>
+        </van-cell>
+      </div>
+    </div>
+
+    <!-- 3. 扫描区域 -->
+    <div class="relative bg-black h-56 flex-shrink-0 overflow-hidden">
+      <video 
+        ref="videoEl" 
+        class="w-full h-full object-cover" 
+        muted 
+        playsinline
+        @click="handleVideoClick"
+      ></video>
+      
+      <!-- 扫描遮罩层 -->
+      <div 
+        v-if="isScanning" 
+        class="scanner-overlay absolute inset-0 pointer-events-none"
+      >
+        <!-- 四周半透明遮罩 -->
+        <div class="scanner-mask"></div>
+        
+        <!-- 中间透明扫描区域 -->
+        <div class="scanner-box">
+          <!-- 扫描框四角装饰 -->
+          <div class="scanner-corner top-left"></div>
+          <div class="scanner-corner top-right"></div>
+          <div class="scanner-corner bottom-left"></div>
+          <div class="scanner-corner bottom-right"></div>
+          
+          <!-- 扫描线动画 -->
+          <div class="scanner-line"></div>
         </div>
       </div>
 
-      <div class="absolute bottom-4 w-full flex justify-center z-20">
+      <div class="absolute bottom-4 w-full flex justify-center z-20 gap-4">
         <van-button 
           v-if="!isScanning" 
           type="primary" 
@@ -236,12 +398,31 @@ onUnmounted(() => stopCamera());
         >
           停止扫描
         </van-button>
+        
+        <!-- 手电筒按钮 -->
+        <van-button
+          v-if="isScanning"
+          type="default"
+          round
+          size="small"
+          class="!bg-white/80 !border-none !backdrop-blur"
+          :class="{ 'torch-on': isTorchOn }"
+          @click="toggleTorch"
+        >
+          <template #icon>
+            <svg viewBox="0 0 1024 1024" width="1em" height="1em" class="torch-icon">
+              <path v-if="!isTorchOn" d="M384 320h256v64H384zM448 256h128v64H448zM384 640h256v64H384zM384 480h256v64H384z" fill="currentColor"/>
+              <path v-else d="M448 128h128v64H448zM384 256h256v64H384zM384 384h256v64H384zM384 512h256v64H384zM384 640h256v64H384z" fill="currentColor"/>
+            </svg>
+          </template>
+          手电筒
+        </van-button>
       </div>
       
       <div v-if="scanError" class="absolute top-0 w-full bg-red-500 text-white text-xs p-2 text-center">{{ scanError }}</div>
     </div>
 
-    <!-- 3. 购物车列表 (Vant Card) -->
+    <!-- 4. 购物车列表 (Vant Card) -->
     <div class="flex-1 overflow-y-auto p-2 pb-20 space-y-2">
       <van-empty v-if="store.cart.length === 0" description="请扫描商品" />
 
@@ -264,7 +445,7 @@ onUnmounted(() => stopCamera());
       </van-card>
     </div>
 
-    <!-- 4. Vant 提交订单栏 -->
+    <!-- 5. Vant 提交订单栏 -->
     <van-submit-bar
       :price="totalPriceInCents"
       button-text="收款"
@@ -313,10 +494,125 @@ onUnmounted(() => stopCamera());
   border-radius: 12px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
-@keyframes scan {
-  0% { top: 10%; opacity: 0; }
-  50% { opacity: 1; }
-  100% { top: 90%; opacity: 0; }
+
+/* 扫描区域样式 */
+.scanner-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.scanner-mask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.5);
+}
+
+.scanner-box {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 240px;
+  height: 240px;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.scanner-corner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: #00ff00;
+  border-style: solid;
+}
+
+.top-left {
+  top: 0;
+  left: 0;
+  border-width: 3px 0 0 3px;
+}
+
+.top-right {
+  top: 0;
+  right: 0;
+  border-width: 3px 3px 0 0;
+}
+
+.bottom-left {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 3px 3px;
+}
+
+.bottom-right {
+  bottom: 0;
+  right: 0;
+  border-width: 0 3px 3px 0;
+}
+
+.scanner-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(to bottom, rgba(0,255,0,0) 0%, rgba(0,255,0,0.8) 50%, rgba(0,255,0,0) 100%);
+  animation: scanning 2s ease-in-out infinite;
+  box-shadow: 0 0 8px rgba(0, 255, 0, 0.6);
+}
+
+@keyframes scanning {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+.focus-animation {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  border: 2px solid #00ff00;
+  border-radius: 50%;
+  animation: focus 1s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes focus {
+  0% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+}
+
+.torch-on {
+  color: #FFD700;
+  background-color: #fff5cc !important;
+}
+
+.torch-icon {
+  width: 1em;
+  height: 1em;
 }
 </style>
 
