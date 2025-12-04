@@ -30,8 +30,7 @@ export const useShopStore = defineStore('shop', () => {
     const index = products.value.findIndex(p => p.barcode === newProduct.barcode)
     if (index !== -1) return false
     products.value.push(newProduct)
-    // 异步同步到云端，不阻塞 UI
-    supabase.from('products').insert([newProduct]).catch(err => console.warn('Sync failed',HW))
+    supabase.from('products').insert([newProduct]).catch(err => console.warn('Sync failed'))
     return true
   }
   const updateProduct = async (updated) => { /* 保持不变 */ 
@@ -59,36 +58,43 @@ export const useShopStore = defineStore('shop', () => {
     }
   }
 
-  // ★★★ 核心修改：改为前端直接请求，绕过 Supabase 云函数 ★★★
+  // ★★★ 核心修改：增加 CORS 代理 + 详细错误提示 ★★★
   const enrichProductInfo = async (barcode) => {
-    // 1. 请在这里填入你的 Roll API 密钥 (https://www.mxnzp.com/)
-    // 警告：在前端暴露密钥有一定风险，但对于个人小项目或演示项目，这是解决网络问题的最快办法
+    // 1. 请务必确认这里的 ID 和 Secret 是否已替换为你自己的
     const APP_ID = 'ulpumjnnphx8kmar';     // <--- 请替换
     const APP_SECRET = 'KEE6tLabuVe02ZZb6ZVVHbmkXjXnnB9l'; // <--- 请替换
 
-    if (APP_ID === '你的APP_ID') {
-      console.error('请在 src/stores/shopStore.js 中填入 APP_ID');
-      showToast('请配置 API 密钥');
+    if (APP_ID === '你的APP_ID' || APP_ID.length < 5) {
+      showToast('代码未配置 APP_ID');
       return null;
     }
 
     try {
       console.log(`[Direct API] 开始查询: ${barcode}`);
       
-      // 2. 直接发起 HTTP 请求
-      const url = `https://www.mxnzp.com/api/barcode/goods/details?barcode=${barcode}&app_id=${APP_ID}&app_secret=${APP_SECRET}`;
+      // 2. 原始 API 地址
+      const targetUrl = `https://www.mxnzp.com/api/barcode/goods/details?barcode=${barcode}&app_id=${APP_ID}&app_secret=${APP_SECRET}`;
       
-      // 设置 5 秒超时，防止断网时一直卡着
+      // 3. 【关键】使用 CORS 代理绕过浏览器限制
+      // 我们使用 allorigins.win 作为公共代理，它会帮我们转发请求并加上正确的 CORS 头
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+      
+      // 设置 8 秒超时
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-      const response = await fetch(url, { signal: controller.signal });
+      const response = await fetch(proxyUrl, { signal: controller.signal });
       clearTimeout(timeoutId);
 
-      const data = await response.json();
-      console.log("[Direct API] 响应:", data);
+      // 如果代理返回状态码不是 200
+      if (!response.ok) {
+        throw new Error(`Proxy Error: ${response.status}`);
+      }
 
-      // 3. 处理数据
+      const data = await response.json();
+      console.log("[API响应]", data);
+
+      // 4. 处理数据
       if (data.code === 1 && data.data) {
         const goodsName = data.data.goodsName + (data.data.standard ? ` (${data.data.standard})` : '');
         const safePrice = parseFloat(data.data.price) || 0;
@@ -97,11 +103,9 @@ export const useShopStore = defineStore('shop', () => {
         const product = products.value.find(p => p.barcode === barcode);
         const cartItem = cart.value.find(i => i.barcode === barcode);
 
-        // 如果之前的名字是占位符，就更新它
         if (product) {
             product.name = goodsName;
             product.price = safePrice;
-            // 顺便尝试同步这个正确的名字到 Supabase (如果通的话)
             supabase.from('products').upsert({
                 barcode, name: goodsName, price: safePrice, stock: product.stock
             }).catch(() => {});
@@ -114,15 +118,22 @@ export const useShopStore = defineStore('shop', () => {
 
         return goodsName;
       } else {
-        console.warn('API 未找到商品或报错:', data.msg);
+        // API 返回了内容，但 code 不是 1（比如 0），说明没查到或参数不对
+        console.warn('API 报错:', data.msg);
+        showToast(`查询失败: ${data.msg || '无数据'}`);
         return null;
       }
 
     } catch (e) {
-      console.error('前端直连查询失败:', e);
-      // 如果是超时或网络错误
+      console.error('查询异常:', e);
+      
+      // 【关键】把具体的错误原因弹出来，方便手机调试
       if (e.name === 'AbortError') {
-        showToast('查询超时，网络不畅');
+        showToast('请求超时，请检查网络');
+      } else if (e.message.includes('Failed to fetch')) {
+        showToast('网络连接失败 (CORS或断网)');
+      } else {
+        showToast(`出错: ${e.message}`);
       }
       return null;
     }
