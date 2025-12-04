@@ -86,17 +86,19 @@ export const useShopStore = defineStore('shop', () => {
         body: { barcode }
       })
 
-      // 2. 如果调用本身出错（比如 Key 错、网络断），直接弹窗显示错误详情
+      // 2. 如果调用本身出错（比如 Key 错、网络断），记录错误并返回 null
       if (error) {
-        alert('❌ 云函数调用报错:\n' + JSON.stringify(error, null, 2));
-        throw error;
+        console.error('云函数调用报错:', error);
+        showToast('网络查询失败，请手动编辑商品');
+        return null;
       }
 
       // 3. 如果调用成功，但逻辑判断没查到
       if (data && !data.found) {
-        // 把后端返回的具体 reason 弹出来，看看是 "余额不足" 还是 "app_id错误"
-        alert('⚠️ 没查到商品:\n' + (data.reason || '未知原因'));
-        console.warn('云端查询未找到:', data?.reason);
+        // 记录未找到原因（用于调试）
+        const reason = data.reason || data.error || '未知原因';
+        console.warn('云端查询未找到商品:', reason);
+        // 不显示 toast，前端会显示"未找到网络信息"
         return null;
       }
 
@@ -104,13 +106,53 @@ export const useShopStore = defineStore('shop', () => {
       if (data && data.found) {
         // alert('✅ 查询成功: ' + data.name); // 调试成功后这行可以删掉
         const goodsName = data.name + (data.spec ? ` (${data.spec})` : '')
-        // ... (后续逻辑不变)
+
+        // 更新本地商品库和购物车（防止覆盖用户手动编辑）
+        const product = products.value.find(p => p.barcode === barcode);
+        if (product) {
+          // 只有商品名称是占位符时才更新
+          if (product.name.includes('正在查询') || product.name.includes('未命名')) {
+            product.name = data.name;
+            product.price = parseFloat(data.price) || 0;
+          }
+        }
+
+        // 更新购物车
+        const cartItem = cart.value.find(i => i.barcode === barcode);
+        if (cartItem) {
+          // 购物车项名称检查同理
+          if (cartItem.name.includes('正在查询') || cartItem.name.includes('未命名')) {
+            cartItem.name = data.name;
+            cartItem.price = parseFloat(data.price) || 0;
+          }
+        }
+
+        // 同步到 Supabase（使用 upsert）
+        if (product && (product.name.includes('正在查询') || product.name.includes('未命名'))) {
+          const productData = {
+            barcode: barcode,
+            name: data.name,
+            price: parseFloat(data.price) || 0,
+            stock: product.stock || 999,
+          };
+          // 复制其他可能存在的字段
+          Object.keys(product).forEach(key => {
+            if (!productData.hasOwnProperty(key)) {
+              productData[key] = product[key];
+            }
+          });
+          supabase.from('products').upsert(productData, { onConflict: 'barcode' }).then(({ error }) => {
+            if (error) console.error('云端更新商品失败', error);
+          });
+        }
+
+        return goodsName; // 返回商品名称给前端
       }
       
     } catch (e) {
       // 5. 捕获所有未知错误
-      alert('❌ 发生异常:\n' + e.message);
-      console.error('云函数调用失败:', e)
+      console.error('云函数调用失败:', e);
+      // 不显示 toast，避免干扰用户，前端会显示"未找到网络信息"
     }
     return null
   }
