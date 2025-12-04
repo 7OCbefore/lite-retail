@@ -148,6 +148,91 @@ export const useShopStore = defineStore('shop', () => {
     return products.value.find(p => p.barcode === barcode)
   }
 
+  // --- 新增：去网络上查询商品信息 ---
+  const enrichProductInfo = async (barcode) => {
+    // 1. 申请到的 ID 和 密钥
+    const appId = 'ulpumjnnphx8kmar'; 
+    const appSecret = 'KEE6tLabuVe02ZZb6ZVVHbmkXjXnnB9l';
+
+    // 2. RollTool 的 API 地址
+    const url = `https://www.mxnzp.com/api/barcode/goods/details?barcode=${barcode}&app_id=${appId}&app_secret=${appSecret}`;
+
+    try {
+      // 3. 发起请求
+      const response = await fetch(url);
+      const resJson = await response.json();
+
+      // 4. code 为 1 表示成功
+      if (resJson.code === 1 && resJson.data) {
+        const data = resJson.data;
+        
+        // 5. 如果查到了名字，且本地的名字还是占位符，就更新它
+        // 先找商品库
+        const product = products.value.find(p => p.barcode === barcode);
+        if (product) {
+          // 只有商品名称是占位符时才更新（防止覆盖用户手动编辑）
+          if (product.name.includes('正在查询') || product.name.includes('未命名')) {
+            product.name = data.goodsName; // 更新名字
+            product.price = parseFloat(data.price) || 0; // 更新价格
+          }
+          // product.standard = data.standard; // 想存规格，可以在这里加
+        }
+
+        // 再找购物车 (因为界面上显示的是购物车里的数据)
+        const cartItem = cart.value.find(i => i.barcode === barcode);
+        if (cartItem) {
+          // 购物车项名称检查同理
+          if (cartItem.name.includes('正在查询') || cartItem.name.includes('未命名')) {
+            cartItem.name = data.goodsName;
+            cartItem.price = parseFloat(data.price) || 0;
+          }
+        }
+
+        // 6. 顺手把新数据存到 Supabase (如果配置了云端)
+        // 使用 upsert 确保商品存在（存在则更新，不存在则插入）
+        // 只有当商品名称是占位符时才更新云端（与本地逻辑一致）
+        const shouldUpdateCloud = product && (product.name.includes('正在查询') || product.name.includes('未命名'));
+
+        if (shouldUpdateCloud) {
+          // 准备更新数据，保留现有字段，只更新名称和价格
+          const updateData = {
+            barcode: barcode,
+            name: data.goodsName,
+            price: parseFloat(data.price) || 0,
+            // 使用现有商品的库存和其他字段
+            stock: product.stock,
+          };
+          // 复制其他可能存在的字段（如category等）
+          Object.keys(product).forEach(key => {
+            if (!updateData.hasOwnProperty(key)) {
+              updateData[key] = product[key];
+            }
+          });
+          supabase.from('products').upsert(updateData, { onConflict: 'barcode' }).then(({ error }) => {
+            if (error) console.error('云端更新商品失败', error);
+          });
+        } else if (!product) {
+          // 商品不存在（理论上不会发生，但保底处理）
+          const insertData = {
+            barcode: barcode,
+            name: data.goodsName,
+            price: parseFloat(data.price) || 0,
+            stock: 999,
+          };
+          supabase.from('products').upsert(insertData, { onConflict: 'barcode' }).then(({ error }) => {
+            if (error) console.error('云端插入商品失败', error);
+          });
+        }
+        // 如果商品存在但名称不是占位符（用户已编辑），则不更新云端
+
+        return data.goodsName;
+      }
+    } catch (error) {
+      console.error('查不到这个商品:', error);
+    }
+    return null; // 没查到
+  };
+
   // --- 持久化 (保持 LocalStorage 作为兜底) ---
   watch(products, (v) => localStorage.setItem('my-products', JSON.stringify(v)), { deep: true })
   watch(orders, (v) => localStorage.setItem('my-orders', JSON.stringify(v)), { deep: true })
@@ -156,6 +241,7 @@ export const useShopStore = defineStore('shop', () => {
     products, cart, orders, isSyncing,
     todaySales, todayOrderCount, cartTotal,
     initSync, // 导出这个新方法
-    addProduct, updateProduct, restockProduct, removeProduct, findProduct, checkout
+    addProduct, updateProduct, restockProduct, removeProduct, findProduct, checkout, 
+    enrichProductInfo
   }
 })

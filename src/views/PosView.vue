@@ -168,44 +168,50 @@ const syncCartWithProducts = () => {
   });
 };
 
-// --- 业务逻辑 ---
-const handleScanSuccess = (code) => {
+// --- 业务逻辑：扫码成功 ---
+const handleScanSuccess = async (code) => {
   const product = store.findProduct(code);
   
+  // 情况 A: 这是一个新商品 (本地没有)
   if (!product) {
-    // 如果未找到商品，则创建一个默认商品并添加到商品库和购物车
+    // 1. 先创建一个“临时工”占位，让收银员能看到东西进来了
     const newItem = {
       barcode: code,
-      name: `未命名商品 (${code})`,
-      price: 0, // 默认价格为0
-      stock: 999 // 默认库存
+      name: `正在查询... (${code.slice(-4)})`, // 名字暂时显示“正在查询”
+      price: 0, 
+      stock: 999 
     };
     
-    // 添加到商品库
+    // 2. 加入本地库和购物车
     store.addProduct(newItem);
-    
-    // 添加到购物车
     store.cart.unshift({ ...newItem, qty: 1 });
-    beep();
+    beep(); // 滴一声
     
-    showToast({
-      message: `已添加未识别商品: ${code}`,
-      position: 'bottom',
-      duration: 2000
+    // 3. 【新增步骤】去网上查一下它是谁
+    store.enrichProductInfo(code).then((realName) => {
+      if (realName) {
+        // 如果查到了，弹个窗告诉收银员
+        showSuccessToast(`已识别：${realName}`);
+      } else {
+        // 没查到，提示收银员自己填
+        showToast('未找到网络信息，请手动编辑');
+      }
     });
     
+    // 4. 防止重复扫码的冷却时间
     isScanning.value = false;
-    setTimeout(() => isScanning.value = true, 3000);
+    setTimeout(() => isScanning.value = true, 3000); // 新商品多停一会，给3秒
     return;
   }
 
-  beep();
+  // 情况 B: 这是一个老商品 (本地有)
+  beep(); // 滴一声
 
   const existing = store.cart.find(item => item.barcode === code);
   if (existing) {
-    existing.qty++;
+    existing.qty++; // 购物车里数量+1
   } else {
-    store.cart.unshift({ ...product, qty: 1 });
+    store.cart.unshift({ ...product, qty: 1 }); // 加进购物车
   }
   
   showToast({
@@ -616,5 +622,3 @@ onUnmounted(() => stopCamera());
 }
 </style>
 
-<!-- TODO
-在PosView.vue的收银功能中，在现有的摄像头扫码收银功能基础上，新增一个搜索框功能。该搜索框应支持通过输入商品名称或条形码的后几位数字来查找商品，并将查找到的商品添加到购物车中以完成收款操作。 -->
