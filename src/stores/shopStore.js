@@ -76,12 +76,13 @@ export const useShopStore = defineStore('shop', () => {
     }
   }
 
-  // ★★★ 核心修改：使用 Supabase Edge Function ★★★
+  // 核心修改：使用 Supabase Edge Function
   const enrichProductInfo = async (barcode) => {
     try {
       console.log('正在调用云函数查询:', barcode)
       
-      // 1. 调用云函数 'fetch-product' (不再直接 fetch 第三方API)
+      // 1. 调用云函数 'fetch-product'
+      // 这一步会发送请求给 Supabase，Supabase 会读取你刚才设置的 secrets 去请求 Roll API
       const { data, error } = await supabase.functions.invoke('fetch-product', {
         body: { barcode }
       })
@@ -89,6 +90,7 @@ export const useShopStore = defineStore('shop', () => {
       if (error) throw error
 
       // 2. 检查结果
+      // data.found 是我们在 index.ts 里定义的返回字段
       if (data && data.found) {
         const goodsName = data.name + (data.spec ? ` (${data.spec})` : '')
         const safePrice = parseFloat(data.price) || 0
@@ -97,12 +99,12 @@ export const useShopStore = defineStore('shop', () => {
         const productIndex = products.value.findIndex(p => p.barcode === barcode)
         if (productIndex !== -1) {
           const product = products.value[productIndex]
-          // 仅当还是占位符时才覆盖
+          // 仅当还是占位符时才覆盖 (防止覆盖用户手动编辑过的名字)
           if (product.name.includes('正在查询') || product.name.includes('未命名')) {
             product.name = goodsName
             product.price = safePrice
             
-            // 4. 同步更新购物车 (Cart)
+            // 4. 同步更新购物车 (Cart) - 确保收银员马上看到变化
             const cartItem = cart.value.find(i => i.barcode === barcode)
             if (cartItem) {
               cartItem.name = goodsName
@@ -110,11 +112,15 @@ export const useShopStore = defineStore('shop', () => {
             }
 
             // 5. 存入 Supabase 数据库
+            // 下次扫码直接读库，省钱又快
             supabase.from('products').update({ name: goodsName, price: safePrice }).eq('barcode', barcode).then(() => {})
             
             return goodsName
           }
         }
+      } else {
+        // 如果没查到，或者后端返回了错误原因
+        console.warn('云端查询未找到:', data?.reason || '未知原因')
       }
     } catch (e) {
       console.error('云函数调用失败:', e)
