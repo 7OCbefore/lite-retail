@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onUnmounted, computed } from 'vue';
+import { ref, onUnmounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useShopStore } from '../stores/shopStore';
 // 引入 Vant 的轻提示组件
@@ -52,12 +52,30 @@ const detectBarcode = async () => {
   requestAnimationFrame(detectBarcode);
 };
 
+// 监听商品变化，同步更新购物车中的商品信息
+watch(() => store.products, () => {
+  syncCartWithProducts();
+}, { deep: true });
+
+// 同步购物车与商品库中的信息
+const syncCartWithProducts = () => {
+  store.cart.forEach(cartItem => {
+    const product = store.findProduct(cartItem.barcode);
+    if (product) {
+      // 更新购物车中的商品信息（除了数量）
+      cartItem.name = product.name;
+      cartItem.price = product.price;
+      cartItem.stock = product.stock;
+    }
+  });
+};
+
 // --- 业务逻辑 ---
 const handleScanSuccess = (code) => {
   const product = store.findProduct(code);
   
   if (!product) {
-    // 如果未找到商品，则创建一个默认商品并添加到购物车
+    // 如果未找到商品，则创建一个默认商品并添加到商品库和购物车
     const newItem = {
       barcode: code,
       name: `未命名商品 (${code})`,
@@ -65,6 +83,10 @@ const handleScanSuccess = (code) => {
       stock: 999 // 默认库存
     };
     
+    // 添加到商品库
+    store.addProduct(newItem);
+    
+    // 添加到购物车
     store.cart.unshift({ ...newItem, qty: 1 });
     beep();
     
