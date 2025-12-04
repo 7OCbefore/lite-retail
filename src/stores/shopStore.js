@@ -79,50 +79,37 @@ export const useShopStore = defineStore('shop', () => {
   // 核心修改：使用 Supabase Edge Function
   const enrichProductInfo = async (barcode) => {
     try {
-      console.log('正在调用云函数查询:', barcode)
-      
-      // 1. 调用云函数 'fetch-product'
-      // 这一步会发送请求给 Supabase，Supabase 会读取你刚才设置的 secrets 去请求 Roll API
+      // 1. 加一个弹窗，确认函数被触发了
+      // alert('正在请求云函数: ' + barcode); 
+
       const { data, error } = await supabase.functions.invoke('fetch-product', {
         body: { barcode }
       })
 
-      if (error) throw error
-
-      // 2. 检查结果
-      // data.found 是我们在 index.ts 里定义的返回字段
-      if (data && data.found) {
-        const goodsName = data.name + (data.spec ? ` (${data.spec})` : '')
-        const safePrice = parseFloat(data.price) || 0
-        
-        // 3. 更新本地状态 (Products)
-        const productIndex = products.value.findIndex(p => p.barcode === barcode)
-        if (productIndex !== -1) {
-          const product = products.value[productIndex]
-          // 仅当还是占位符时才覆盖 (防止覆盖用户手动编辑过的名字)
-          if (product.name.includes('正在查询') || product.name.includes('未命名')) {
-            product.name = goodsName
-            product.price = safePrice
-            
-            // 4. 同步更新购物车 (Cart) - 确保收银员马上看到变化
-            const cartItem = cart.value.find(i => i.barcode === barcode)
-            if (cartItem) {
-              cartItem.name = goodsName
-              cartItem.price = safePrice
-            }
-
-            // 5. 存入 Supabase 数据库
-            // 下次扫码直接读库，省钱又快
-            supabase.from('products').update({ name: goodsName, price: safePrice }).eq('barcode', barcode).then(() => {})
-            
-            return goodsName
-          }
-        }
-      } else {
-        // 如果没查到，或者后端返回了错误原因
-        console.warn('云端查询未找到:', data?.reason || '未知原因')
+      // 2. 如果调用本身出错（比如 Key 错、网络断），直接弹窗显示错误详情
+      if (error) {
+        alert('❌ 云函数调用报错:\n' + JSON.stringify(error, null, 2));
+        throw error;
       }
+
+      // 3. 如果调用成功，但逻辑判断没查到
+      if (data && !data.found) {
+        // 把后端返回的具体 reason 弹出来，看看是 "余额不足" 还是 "app_id错误"
+        alert('⚠️ 没查到商品:\n' + (data.reason || '未知原因'));
+        console.warn('云端查询未找到:', data?.reason);
+        return null;
+      }
+
+      // 4. 如果成功
+      if (data && data.found) {
+        // alert('✅ 查询成功: ' + data.name); // 调试成功后这行可以删掉
+        const goodsName = data.name + (data.spec ? ` (${data.spec})` : '')
+        // ... (后续逻辑不变)
+      }
+      
     } catch (e) {
+      // 5. 捕获所有未知错误
+      alert('❌ 发生异常:\n' + e.message);
       console.error('云函数调用失败:', e)
     }
     return null
