@@ -71,6 +71,23 @@ export const useShopStore = defineStore('shop', () => {
     return true
   }
 
+  const updateProduct = async (updatedProduct) => {
+    // 查找商品索引
+    const index = products.value.findIndex(p => p.barcode === updatedProduct.barcode)
+    if (index === -1) return false
+
+    // 更新本地 (合并现有属性)
+    products.value[index] = { ...products.value[index], ...updatedProduct }
+
+    // 云端更新（排除条形码字段，因为条形码是主键）
+    const { barcode, ...updateData } = updatedProduct;
+    supabase.from('products').update(updateData).eq('barcode', barcode).then(({ error }) => {
+      if (error) console.error('云端更新商品失败', error)
+    })
+
+    return true
+  }
+
   const removeProduct = async (barcode) => {
     // 本地
     products.value = products.value.filter(p => p.barcode !== barcode)
@@ -139,6 +156,6 @@ export const useShopStore = defineStore('shop', () => {
     products, cart, orders, isSyncing,
     todaySales, todayOrderCount, cartTotal,
     initSync, // 导出这个新方法
-    addProduct, restockProduct, removeProduct, findProduct, checkout
+    addProduct, updateProduct, restockProduct, removeProduct, findProduct, checkout
   }
 })

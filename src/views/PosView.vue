@@ -12,6 +12,16 @@ const videoEl = ref(null);
 const isScanning = ref(false);
 const scanError = ref('');
 
+// 编辑相关
+const editingItem = ref(null);
+const editForm = ref({
+  barcode: '',
+  name: '',
+  price: 0,
+  stock: 0
+});
+const showEditDialog = ref(false);
+
 // --- 摄像头逻辑 (保持不变) ---
 const startCamera = async () => {
   scanError.value = '';
@@ -146,6 +156,33 @@ const beep = () => {
   osc.stop(ctx.currentTime + 0.1);
 };
 
+// 编辑商品
+const openEditDialog = (item) => {
+  editForm.value = {
+    barcode: item.barcode,
+    name: item.name,
+    price: item.price,
+    stock: item.stock
+  };
+  editingItem.value = item;
+  showEditDialog.value = true;
+};
+
+const saveEdit = () => {
+  if (!editForm.value.barcode) return;
+
+  // 更新商品库
+  store.updateProduct({
+    barcode: editForm.value.barcode,
+    name: editForm.value.name,
+    price: Number(editForm.value.price),
+    stock: Number(editForm.value.stock)
+  });
+
+  showEditDialog.value = false;
+  showToast('商品信息已更新');
+};
+
 // 计算总价 (注意：Vant SubmitBar 接收的是“分”，所以要 * 100)
 const totalPriceInCents = computed(() => {
   return store.cart.reduce((sum, item) => sum + item.price * item.qty, 0) * 100;
@@ -214,13 +251,16 @@ onUnmounted(() => stopCamera());
         :price="item.price.toFixed(2)"
         :title="item.name"
         :desc="item.barcode"
-        thumb="[https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg](https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg)" 
+        thumb="[https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg](https://fastly.jsdelivr.net/npm/@vant/assets/cat.jpeg)"
       >
         <!-- 使用 Vant 的 Stepper 步进器控制数量 -->
         <template #num>
           <van-stepper v-model="item.qty" theme="round" button-size="22" disable-input />
         </template>
-        <!-- 如果没有图片，可以用 CSS 隐藏 thumb 或者换成 icon -->
+        <!-- 编辑按钮 -->
+        <template #footer>
+          <van-button size="small" type="default" @click="openEditDialog(item)">编辑</van-button>
+        </template>
       </van-card>
     </div>
 
@@ -230,6 +270,39 @@ onUnmounted(() => stopCamera());
       button-text="收款"
       @submit="handleCheckout"
     />
+
+    <!-- 编辑商品对话框 -->
+    <van-dialog
+      v-model:show="showEditDialog"
+      title="编辑商品"
+      show-cancel-button
+      @confirm="saveEdit"
+    >
+      <div class="p-4 space-y-3">
+        <van-field
+          v-model="editForm.barcode"
+          label="条形码"
+          readonly
+        />
+        <van-field
+          v-model="editForm.name"
+          label="商品名称"
+          placeholder="请输入商品名称"
+        />
+        <van-field
+          v-model="editForm.price"
+          label="价格"
+          type="number"
+          placeholder="请输入价格"
+        />
+        <van-field
+          v-model="editForm.stock"
+          label="库存"
+          type="number"
+          placeholder="请输入库存"
+        />
+      </div>
+    </van-dialog>
   </div>
 </template>
 
@@ -246,3 +319,6 @@ onUnmounted(() => stopCamera());
   100% { top: 90%; opacity: 0; }
 }
 </style>
+
+<!-- TODO
+在PosView.vue的收银功能中，在现有的摄像头扫码收银功能基础上，新增一个搜索框功能。该搜索框应支持通过输入商品名称或条形码的后几位数字来查找商品，并将查找到的商品添加到购物车中以完成收款操作。 -->
