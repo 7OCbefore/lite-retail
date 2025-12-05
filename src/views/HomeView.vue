@@ -1,7 +1,7 @@
 <script setup>
 import { useRouter } from 'vue-router';
 import { useShopStore } from '../stores/shopStore';
-import { showToast } from 'vant';
+import { showToast, showDialog } from 'vant';
 
 const router = useRouter();
 const store = useShopStore();
@@ -13,6 +13,20 @@ const goPos = () => {
 const handleFeatureNotReady = () => {
   showToast('功能开发中...');
 };
+
+// 手动触发同步
+const handleSync = () => {
+  showDialog({
+    title: '同步数据',
+    message: '这将把本地所有的商品数据强制推送到云端数据库，解决数据不一致问题。',
+    showCancelButton: true,
+    confirmButtonText: '立即同步'
+  }).then((action) => {
+    if (action === 'confirm') {
+      store.syncLocalToCloud();
+    }
+  });
+};
 </script>
 
 <template>
@@ -21,9 +35,8 @@ const handleFeatureNotReady = () => {
     <van-nav-bar title="Lite-Retail" :border="false" class="!bg-transparent" />
 
     <div class="p-4 space-y-6">
-      <!-- 2. 数据概览卡片 (自定义样式) -->
+      <!-- 2. 数据概览卡片 -->
       <div class="bg-gradient-to-br from-primary to-emerald-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-        <!-- 装饰背景圆圈 -->
         <div class="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
         
         <div class="relative z-10 flex justify-between items-end">
@@ -57,11 +70,10 @@ const handleFeatureNotReady = () => {
         <van-icon name="arrow" class="text-gray-300" />
       </div>
 
-      <!-- 4. 常用功能宫格 (Grid) -->
+      <!-- 4. 常用功能宫格 -->
       <div>
         <h3 class="text-sm font-bold text-gray-500 mb-3 ml-1">常用管理</h3>
         <van-grid :column-num="3" :gutter="10" clickable>
-          <!-- 商品管理 -->
           <van-grid-item 
             icon="goods-collect-o" 
             text="商品库" 
@@ -69,37 +81,32 @@ const handleFeatureNotReady = () => {
             class="rounded-xl overflow-hidden"
           />
           
-          <!-- 快速入库 (目前还没有独立页面，先提示) -->
+          <!-- 新增：数据同步入口 -->
           <van-grid-item 
-            icon="logistics" 
-            text="入库登记" 
-            @click="handleFeatureNotReady" 
+            icon="cloud-upload" 
+            text="数据同步" 
+            @click="handleSync" 
+            class="text-primary"
           />
           
-          <!-- 销售报表 (占位) -->
           <van-grid-item 
             icon="chart-trending-o" 
             text="销售报表" 
-            badge="New"
             to="/report"
           />
           
-          <!-- 店铺设置 (占位) -->
           <van-grid-item 
             icon="shop-o" 
             text="店铺信息" 
-            badge="New"
             @click="handleFeatureNotReady" 
           />
           
-          <!-- 会员管理 (占位) -->
           <van-grid-item 
             icon="friends-o" 
             text="会员管理" 
             @click="handleFeatureNotReady" 
           />
           
-          <!-- 更多 -->
           <van-grid-item 
             icon="apps-o" 
             text="更多功能" 
@@ -112,7 +119,6 @@ const handleFeatureNotReady = () => {
 </template>
 
 <style scoped>
-/* 让 Vant Grid 的圆角更好看 */
 :deep(.van-grid-item__content) {
   border-radius: 12px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.03);
