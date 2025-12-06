@@ -318,6 +318,8 @@
       if (action === 'confirm') {
         store.removeProduct(itemBarcode);
         showToast('已删除');
+        // 删除成功后关闭编辑面板
+        showEditDialog.value = false;
       }
     });
   };
@@ -512,25 +514,45 @@
     </div>
     
     <!-- 编辑商品模态窗 -->
-    <van-dialog v-model:show="showEditDialog" title="编辑商品" show-cancel-button @confirm="saveEdit">
-      <div class="p-4 space-y-3">
-        <van-field v-model="editForm.barcode" label="条码" readonly />
-        <van-field v-model="editForm.name" label="名称" />
-        <van-field v-model="editForm.price" label="价格" type="number" />
-        <van-field v-model="editForm.stock" label="库存" type="number" />
+    <van-dialog v-model:show="showEditDialog" title="编辑商品" show-cancel-button @confirm="saveEdit" class="ios-style-dialog">
+      <div class="ios-edit-container">
+        <div class="ios-input-group mb-4">
+          <label class="ios-label">条码</label>
+          <div class="ios-input ios-input-readonly">{{ editForm.barcode }}</div>
+        </div>
         
-        <!-- 补货功能 -->
-        <div class="mt-4">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-sm text-gray-600">快速补货</span>
-            <van-button size="mini" type="primary" plain @click="quickRestock(editForm)">+10</van-button>
+        <div class="ios-input-group mb-4">
+          <label class="ios-label">名称</label>
+          <input v-model="editForm.name" class="ios-input" placeholder="输入商品名称" />
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <div class="ios-input-group">
+            <label class="ios-label">价格</label>
+            <input v-model.number="editForm.price" type="number" class="ios-input" placeholder="0.00" />
+          </div>
+          
+          <div class="ios-input-group">
+            <label class="ios-label">库存</label>
+            <input v-model.number="editForm.stock" type="number" class="ios-input" placeholder="数量" />
           </div>
         </div>
       </div>
+      
       <template #footer>
-        <van-button size="small" @click="confirmDelete(editingItem.barcode)" style="float: left; margin-left: 10px; background-color: #f44336; color: white;">删除</van-button>
-        <van-button size="small" @click="showEditDialog = false">取消</van-button>
-        <van-button size="small" type="primary" @click="saveEdit">保存</van-button>
+        <div class="ios-footer">
+          <button @click="confirmDelete(editingItem.barcode)" class="ios-destructive-button">
+            删除
+          </button>
+          <div class="ios-button-group">
+            <button @click="showEditDialog = false" class="ios-secondary-button">
+              取消
+            </button>
+            <button @click="saveEdit" class="ios-primary-button">
+              保存
+            </button>
+          </div>
+        </div>
       </template>
     </van-dialog>
   </template>
@@ -553,5 +575,98 @@
     display: flex;
     justify-content: space-between;
     padding: 0 16px 16px;
+  }
+  
+  /* iOS风格的编辑对话框样式 */
+  .ios-edit-container {
+    padding: 20px;
+  }
+  
+  .ios-input-group {
+    margin-bottom: 16px;
+  }
+  
+  .ios-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1d1d1f;
+    opacity: 0.6;
+  }
+  
+  .ios-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid #d2d2d7;
+    border-radius: 10px;
+    font-size: 17px;
+    background-color: #fff;
+    color: #1d1d1f;
+    box-sizing: border-box;
+  }
+  
+  .ios-input:focus {
+    outline: none;
+    border-color: #007aff;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+  }
+  
+  .ios-input-readonly {
+    background-color: #f2f2f7;
+    color: #8e8e93;
+  }
+  
+  .ios-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px 20px;
+  }
+  
+  .ios-button-group {
+    display: flex;
+    gap: 10px;
+  }
+  
+  .ios-primary-button {
+    padding: 12px 24px;
+    background-color: #007aff;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  
+  .ios-primary-button:active {
+    background-color: #0062cc;
+  }
+  
+  .ios-secondary-button {
+    padding: 12px 24px;
+    background-color: #e5e5ea;
+    color: #007aff;
+    border: none;
+    border-radius: 10px;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  
+  .ios-secondary-button:active {
+    background-color: #d1d1d6;
+  }
+  
+  .ios-destructive-button {
+    padding: 12px 24px;
+    background-color: transparent;
+    color: #ff3b30;
+    border: none;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  
+  .ios-destructive-button:active {
+    opacity: 0.5;
   }
   </style>
