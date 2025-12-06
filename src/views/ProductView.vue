@@ -32,27 +32,55 @@ const startCamera = async () => {
         advanced: [{ focusMode: 'continuous' }]
       }
     };
+
+    // Make sure UI is updated first
+    isScanning.value = true;
+
+    // Wait a tick to ensure the video element is rendered
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     if (videoEl.value) {
       videoEl.value.srcObject = stream;
-      videoEl.value.play();
-      isScanning.value = true;
-      const tracks = stream.getVideoTracks();
-      if (tracks.length > 0) videoTrack.value = tracks[0];
-      detectBarcode();
+      // Wait for the video to be loaded before starting detection
+      videoEl.value.onloadedmetadata = () => {
+        videoEl.value.play();
+        const tracks = stream.getVideoTracks();
+        if (tracks.length > 0) videoTrack.value = tracks[0];
+        detectBarcode();
+      };
+    } else {
+      // If the video element is not ready yet, try again after a short delay
+      setTimeout(() => {
+        if (videoEl.value) {
+          videoEl.value.srcObject = stream;
+          videoEl.value.onloadedmetadata = () => {
+            videoEl.value.play();
+            const tracks = stream.getVideoTracks();
+            if (tracks.length > 0) videoTrack.value = tracks[0];
+            detectBarcode();
+          };
+        }
+      }, 500);
     }
   } catch (err) {
     scanError.value = '无法启动摄像头';
     showToast({ type: 'fail', message: '摄像头启动失败' });
+    isScanning.value = false;
   }
 };
 
 const stopCamera = () => {
   if (videoEl.value && videoEl.value.srcObject) {
-    videoEl.value.srcObject.getTracks().forEach(t => t.stop());
-    isScanning.value = false;
-    videoTrack.value = null;
+    const stream = videoEl.value.srcObject;
+    if (stream) {
+      const tracks = stream.getTracks();
+      tracks.forEach(track => track.stop());
+    }
+    videoEl.value.srcObject = null;
   }
+  isScanning.value = false;
+  videoTrack.value = null;
 };
 
 // --- 条码检测逻辑 ---
@@ -236,17 +264,19 @@ onUnmounted(() => {
     />
 
     <!-- 扫码摄像头弹窗 -->
-    <div v-if="isScanning" class="fixed inset-0 bg-black z-50 flex flex-col">
-      <div class="flex justify-between items-center p-4 bg-gray-800 text-white">
-        <span>扫描条形码</span>
-        <van-button type="default" size="small" @click="stopCamera">关闭</van-button>
-      </div>
+    <div v-if="isScanning" class="fixed inset-0 bg-black z-50">
+      <div class="flex flex-col h-full">
+        <div class="flex justify-between items-center p-4 bg-gray-800 text-white z-10">
+          <span>扫描条形码</span>
+          <van-button type="default" size="small" @click="stopCamera">关闭</van-button>
+        </div>
 
-      <div class="relative flex-1 flex items-center justify-center">
-        <video ref="videoEl" class="w-full h-full object-cover" muted playsinline></video>
-        <div class="absolute inset-0 pointer-events-none border-2 border-green-500/50 m-10 rounded"></div>
-        <div v-if="scanError" class="absolute top-4 w-full bg-red-500 text-white text-xs p-2 text-center">
-          {{ scanError }}
+        <div class="relative flex-1">
+          <video ref="videoEl" class="w-full h-full object-cover object-center" muted playsinline style="background: #000;"></video>
+          <div class="absolute inset-0 pointer-events-none border-2 border-green-500/50 m-10 rounded"></div>
+          <div v-if="scanError" class="absolute top-4 w-full bg-red-500 text-white text-xs p-2 text-center z-20">
+            {{ scanError }}
+          </div>
         </div>
       </div>
     </div>
@@ -356,5 +386,12 @@ onUnmounted(() => {
 /* 修复 SwipeCell 圆角显示问题 */
 :deep(.van-swipe-cell__right) {
   display: flex;
+}
+
+/* 确保视频元素正确显示 */
+:deep(video) {
+  width: 100% !important;
+  height: 100% !important;
+  background: #000;
 }
 </style>
