@@ -8,10 +8,12 @@ const router = useRouter();
 const store = useShopStore();
 
 const videoEl = ref(null);
+const scanBoxRef = ref(null);
 const isScanning = ref(false);
 const scanError = ref('');
 const isTorchOn = ref(false);
 const videoTrack = ref(null);
+const isQuerying = ref(false);
 
 // 搜索相关
 const searchKeyword = ref('');
@@ -107,6 +109,21 @@ watch(() => store.products, () => {
 const handleScanSuccess = async (code) => {
   const product = store.findProduct(code);
 
+  // 触发震动反馈（如果支持）
+  if (navigator.vibrate) {
+    navigator.vibrate(50); // 50ms 震动
+  }
+
+  // Apply success visual feedback to scan box
+  if (scanBoxRef.value) {
+    scanBoxRef.value.classList.add('scan-success-effect');
+    setTimeout(() => {
+      if (scanBoxRef.value) {
+        scanBoxRef.value.classList.remove('scan-success-effect');
+      }
+    }, 500);
+  }
+
   // 1. 新商品
   if (!product) {
     const newItem = {
@@ -130,11 +147,11 @@ const handleScanSuccess = async (code) => {
     const inCart = store.cart.find(i => i.barcode === code);
     if (!inCart) store.cart.unshift({ ...product, qty: 1 });
     else inCart.qty++;
-    
+
     showToast('再次尝试查询...');
     triggerSearch(code); // 再次尝试
     beep();
-    
+
     isScanning.value = false;
     setTimeout(() => isScanning.value = true, 2000);
     return;
@@ -144,27 +161,54 @@ const handleScanSuccess = async (code) => {
   const existing = store.cart.find(item => item.barcode === code);
   if (existing) existing.qty++;
   else store.cart.unshift({ ...product, qty: 1 });
-  
+
   beep();
   showToast(`+1 ${product.name}`);
   isScanning.value = false;
   setTimeout(() => isScanning.value = true, 1000);
 };
 
-const triggerSearch = (code) => {
-  store.enrichProductInfo(code).then((name) => {
+// Function to handle not found state with visual feedback
+const handleNotFound = (code) => {
+  // Apply error animation to scan box
+  if (scanBoxRef.value) {
+    scanBoxRef.value.classList.remove('scan-success-effect');
+    scanBoxRef.value.classList.add('scan-error-shake');
+    setTimeout(() => {
+      if (scanBoxRef.value) {
+        scanBoxRef.value.classList.remove('scan-error-shake');
+      }
+    }, 500);
+  }
+
+  // Show error toast
+  showFailToast('未建档，请录入');
+};
+
+const triggerSearch = async (code) => {
+  // Set querying state
+  isQuerying.value = true;
+
+  try {
+    const name = await store.enrichProductInfo(code);
     if (name) {
       showSuccessToast(`已识别：${name}`);
     } else {
-      // 查询失败，更名为“未找到”
+      // 查询失败，更名为"未找到"
       const fallback = '未找到商品 (点击编辑)';
       const p = store.products.find(i => i.barcode === code);
       if (p && (p.name.includes('查询中') || p.name.includes('未找到'))) p.name = '未找到商品';
-      
+
       const c = store.cart.find(i => i.barcode === code);
       if (c && (c.name.includes('查询中') || c.name.includes('未找到'))) c.name = fallback;
+
+      // Handle the not found case with visual feedback
+      handleNotFound(code);
     }
-  });
+  } finally {
+    // Always reset querying state
+    isQuerying.value = false;
+  }
 };
 
 const addItemFromSearch = (product) => {
@@ -229,13 +273,46 @@ onUnmounted(() => stopCamera());
 
     <div class="relative bg-black h-56 flex-shrink-0 overflow-hidden">
       <video ref="videoEl" class="w-full h-full object-cover" muted playsinline @click="handleVideoClick"></video>
-      <div v-if="isScanning" class="absolute inset-0 pointer-events-none border-2 border-green-500/50 m-10 rounded"></div>
-      
+
+      <!-- 扫码遮罩层 -->
+      <div v-if="isScanning" class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center pointer-events-none">
+        <!-- 扫描框容器 -->
+        <div ref="scanBoxRef" class="relative" style="width: 70vw; height: 70vw; max-width: 260px; max-height: 260px;">
+          <!-- 扫描框四个角 -->
+          <div class="absolute top-0 left-0 w-5 h-5 border-l-4 border-t-4 border-white" style="width: 20px; height: 20px;"></div>
+          <div class="absolute top-0 right-0 w-5 h-5 border-r-4 border-t-4 border-white" style="width: 20px; height: 20px;"></div>
+          <div class="absolute bottom-0 left-0 w-5 h-5 border-l-4 border-b-4 border-white" style="width: 20px; height: 20px;"></div>
+          <div class="absolute bottom-0 right-0 w-5 h-5 border-r-4 border-b-4 border-white" style="width: 20px; height: 20px;"></div>
+
+          <!-- 扫描线动画 -->
+          <div v-if="!isQuerying" class="absolute top-0 left-0 w-full h-1 bg-gradient-to-b from-transparent via-[#07C160] to-transparent animate-scan-move"></div>
+
+          <!-- 查询中状态 -->
+          <div v-else class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
+            <van-loading size="24" color="#07C160" />
+            <span class="text-white text-sm mt-2">正在查询...</span>
+          </div>
+        </div>
+
+        <!-- 手电筒按钮 -->
+        <div class="absolute bottom-20 w-full flex justify-center">
+          <van-button
+            type="default"
+            round
+            size="small"
+            class="bg-white/30 backdrop-blur-sm text-white border border-white/20"
+            @click="toggleTorch"
+          >
+            <i class="van-icon van-icon-light-o"></i>
+            补光
+          </van-button>
+        </div>
+      </div>
+
       <div class="absolute bottom-4 w-full flex justify-center z-20 gap-4">
         <van-button v-if="!isScanning" type="primary" round icon="scan" @click="startCamera">启动摄像头</van-button>
         <template v-else>
-            <van-button type="default" round size="small" class="!bg-white/80" @click="stopCamera">停止</van-button>
-            <van-button type="default" round size="small" class="!bg-white/80" @click="toggleTorch">手电筒</van-button>
+            <van-button type="default" round size="small" class="!bg-white/30 backdrop-blur-sm !text-white border border-white/20" @click="stopCamera">停止</van-button>
         </template>
       </div>
       <div v-if="scanError" class="absolute top-0 w-full bg-red-500 text-white text-xs p-1 text-center">{{ scanError }}</div>

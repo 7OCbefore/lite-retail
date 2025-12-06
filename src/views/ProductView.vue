@@ -16,6 +16,7 @@ const searchText = ref('');
 
 // --- 摄像头扫描相关 ---
 const videoEl = ref(null);
+const scanBoxRef = ref(null);
 const isScanning = ref(false);
 const scanError = ref('');
 const videoTrack = ref(null);
@@ -123,9 +124,52 @@ const beep = () => {
   }
 };
 
+// Torch state
+const isTorchOn = ref(false);
+
+// Query state
+const isQuerying = ref(false);
+
+// Torch control
+const toggleTorch = async () => {
+  if (!videoTrack.value) return;
+  try {
+    const capabilities = videoTrack.value.getCapabilities();
+    if (!capabilities.torch) {
+      showToast({ type: 'fail', message: '不支持手电筒' });
+      return;
+    }
+    await videoTrack.value.applyConstraints({ advanced: [{ torch: !isTorchOn.value }] });
+    isTorchOn.value = !isTorchOn.value;
+  } catch (err) {
+    showToast({ type: 'fail', message: '手电筒控制失败' });
+  }
+};
+
+// Function to handle not found state with visual feedback
+const handleNotFound = (code) => {
+  // Apply error animation to scan box
+  if (scanBoxRef.value) {
+    scanBoxRef.value.classList.remove('scan-success-effect');
+    scanBoxRef.value.classList.add('scan-error-shake');
+    setTimeout(() => {
+      if (scanBoxRef.value) {
+        scanBoxRef.value.classList.remove('scan-error-shake');
+      }
+    }, 500);
+  }
+
+  // Show error toast
+  showToast({ type: 'warning', message: '未建档，请录入' });
+};
+
 // --- 触发商品信息查询 ---
-const triggerSearch = (code) => {
-  return store.enrichProductInfo(code).then((name) => {
+const triggerSearch = async (code) => {
+  // Set querying state
+  isQuerying.value = true;
+
+  try {
+    const name = await store.enrichProductInfo(code);
     if (name) {
       showToast({ type: 'success', message: `已识别：${name}` });
     } else {
@@ -136,14 +180,37 @@ const triggerSearch = (code) => {
 
       const c = store.cart.find(i => i.barcode === code);
       if (c && (c.name.includes('查询中') || c.name.includes('未找到'))) c.name = fallback;
+
+      // Handle the not found case with visual feedback
+      handleNotFound(code);
     }
-  });
+  } finally {
+    // Always reset querying state
+    isQuerying.value = false;
+  }
 };
 
 // --- 扫码成功处理 ---
 const handleScanSuccess = async (code) => {
   barcode.value = code;
   const product = store.findProduct(code);
+
+  // 触发震动反馈（如果支持）
+  if (navigator.vibrate) {
+    navigator.vibrate(50); // 50ms 震动
+  }
+
+  // Apply success visual feedback to scan box
+  if (scanBoxRef.value) {
+    // Temporarily remove any previous error state
+    scanBoxRef.value.classList.remove('scan-error-shake');
+    scanBoxRef.value.classList.add('scan-success-effect');
+    setTimeout(() => {
+      if (scanBoxRef.value) {
+        scanBoxRef.value.classList.remove('scan-success-effect');
+      }
+    }, 500);
+  }
 
   // 1. 新商品
   if (!product) {
@@ -264,19 +331,57 @@ onUnmounted(() => {
     />
 
     <!-- 扫码摄像头弹窗 -->
-    <div v-if="isScanning" class="fixed inset-0 bg-black z-50">
-      <div class="flex flex-col h-full">
-        <div class="flex justify-between items-center p-4 bg-gray-800 text-white z-10">
-          <span>扫描条形码</span>
-          <van-button type="default" size="small" @click="stopCamera">关闭</van-button>
+    <div v-if="isScanning" class="fixed inset-0 z-50">
+      <!-- 摄像头预览 -->
+      <video ref="videoEl" class="w-full h-full object-cover object-center" muted playsinline style="background: #000;"></video>
+
+      <!-- 遮罩层 -->
+      <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center pointer-events-none">
+        <!-- 扫描框容器 -->
+        <div ref="scanBoxRef" class="relative" style="width: 70vw; height: 70vw; max-width: 260px; max-height: 260px;">
+          <!-- 扫描框四个角 -->
+          <div class="absolute top-0 left-0 w-5 h-5 border-l-4 border-t-4 border-white" style="width: 20px; height: 20px;"></div>
+          <div class="absolute top-0 right-0 w-5 h-5 border-r-4 border-t-4 border-white" style="width: 20px; height: 20px;"></div>
+          <div class="absolute bottom-0 left-0 w-5 h-5 border-l-4 border-b-4 border-white" style="width: 20px; height: 20px;"></div>
+          <div class="absolute bottom-0 right-0 w-5 h-5 border-r-4 border-b-4 border-white" style="width: 20px; height: 20px;"></div>
+
+          <!-- 扫描线动画 -->
+          <div v-if="!isQuerying" class="absolute top-0 left-0 w-full h-1 bg-gradient-to-b from-transparent via-[#07C160] to-transparent animate-scan-move"></div>
+
+          <!-- 查询中状态 -->
+          <div v-else class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
+            <van-loading size="24" color="#07C160" />
+            <span class="text-white text-sm mt-2">正在查询...</span>
+          </div>
         </div>
 
-        <div class="relative flex-1">
-          <video ref="videoEl" class="w-full h-full object-cover object-center" muted playsinline style="background: #000;"></video>
-          <div class="absolute inset-0 pointer-events-none border-2 border-green-500/50 m-10 rounded"></div>
-          <div v-if="scanError" class="absolute top-4 w-full bg-red-500 text-white text-xs p-2 text-center z-20">
-            {{ scanError }}
-          </div>
+        <!-- 手电筒按钮 -->
+        <div class="absolute bottom-20 w-full flex justify-center">
+          <van-button
+            type="default"
+            round
+            size="small"
+            class="bg-white/30 backdrop-blur-sm text-white border border-white/20"
+            @click="toggleTorch"
+          >
+            <i class="van-icon van-icon-light-o"></i>
+            补光
+          </van-button>
+        </div>
+      </div>
+
+      <!-- 顶部操作栏 -->
+      <div class="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/50 to-transparent">
+        <div class="flex justify-between items-center">
+          <span class="text-white font-bold">扫描条形码</span>
+          <van-button type="default" size="small" class="bg-white/30 backdrop-blur-sm text-white border border-white/20" @click="stopCamera">关闭</van-button>
+        </div>
+      </div>
+
+      <!-- 错误提示 -->
+      <div v-if="scanError" class="absolute top-1/4 w-full px-4">
+        <div class="bg-red-500 text-white text-sm p-3 rounded-lg text-center mx-auto" style="max-width: 300px;">
+          {{ scanError }}
         </div>
       </div>
     </div>
