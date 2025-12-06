@@ -3,6 +3,8 @@ doc/
 BarcodeData/
 .claude/
 .qwen/
+.iflow/
+/IFLOW.md
 /ScanCode_DesignDoc.md
 /ClAUDE.md
 /项目记忆点文档251204.md

@@ -284,8 +284,32 @@
     }
   };
   
+  
+  
+  // --- 编辑相关 ---
+  const editingItem = ref(null);
+  const editForm = ref({ barcode: '', name: '', price: 0, stock: 0 });
+  const showEditDialog = ref(false);
+  
+  const openEditDialog = (item) => {
+    editForm.value = { ...item };
+    editingItem.value = item;
+    showEditDialog.value = true;
+  };
+  
+  const saveEdit = () => {
+    store.updateProduct({
+      barcode: editForm.value.barcode,
+      name: editForm.value.name,
+      price: Number(editForm.value.price),
+      stock: Number(editForm.value.stock)
+    });
+    showEditDialog.value = false;
+    showToast({ type: 'success', message: '已更新' });
+  };
+  
   // --- 删除商品 (带确认弹窗) ---
-  const handleDelete = (itemBarcode) => {
+  const confirmDelete = (itemBarcode) => {
     showDialog({
       title: '确认删除?',
       message: '删除后无法恢复，确定要删除这个商品吗？',
@@ -301,6 +325,10 @@
   // --- 快速补货 ---
   const quickRestock = (item) => {
     store.restockProduct(item.barcode, 10);
+    // 更新编辑表单中的库存值
+    if (editForm.value && editForm.value.barcode === item.barcode) {
+      editForm.value.stock = item.stock + 10;
+    }
     showToast(`已补货: ${item.name} +10`);
   };
   
@@ -452,7 +480,7 @@
         <div class="px-2 space-y-2 mt-2">
           <van-empty v-if="filteredProducts.length === 0" description="暂无商品" />
   
-          <!-- 侧滑删除组件 -->
+          <!-- 侧滑编辑组件 -->
           <van-swipe-cell 
             v-for="item in filteredProducts" 
             :key="item.barcode" 
@@ -476,15 +504,35 @@
   
             <!-- 右侧滑动出来的按钮 -->
             <template #right>
-              <div class="h-full flex">
-                <van-button square type="primary" text="+10 补货" class="h-full" @click="quickRestock(item)" />
-                <van-button square type="danger" text="删除" class="h-full" @click="handleDelete(item.barcode)" />
-              </div>
+              <van-button square type="primary" text="编辑" class="h-full" @click="openEditDialog(item)" />
             </template>
           </van-swipe-cell>
         </div>
       </div>
     </div>
+    
+    <!-- 编辑商品模态窗 -->
+    <van-dialog v-model:show="showEditDialog" title="编辑商品" show-cancel-button @confirm="saveEdit">
+      <div class="p-4 space-y-3">
+        <van-field v-model="editForm.barcode" label="条码" readonly />
+        <van-field v-model="editForm.name" label="名称" />
+        <van-field v-model="editForm.price" label="价格" type="number" />
+        <van-field v-model="editForm.stock" label="库存" type="number" />
+        
+        <!-- 补货功能 -->
+        <div class="mt-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm text-gray-600">快速补货</span>
+            <van-button size="mini" type="primary" plain @click="quickRestock(editForm)">+10</van-button>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <van-button size="small" @click="confirmDelete(editingItem.barcode)" style="float: left; margin-left: 10px; background-color: #f44336; color: white;">删除</van-button>
+        <van-button size="small" @click="showEditDialog = false">取消</van-button>
+        <van-button size="small" type="primary" @click="saveEdit">保存</van-button>
+      </template>
+    </van-dialog>
   </template>
   
   <style scoped>
@@ -498,5 +546,12 @@
     width: 100% !important;
     height: 100% !important;
     background: #000;
+  }
+  
+  /* 编辑对话框样式 */
+  :deep(.van-dialog__footer) {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 16px 16px;
   }
   </style>
