@@ -1,7 +1,6 @@
 <script setup>
 import { onMounted } from 'vue';
 import { useShopStore } from './stores/shopStore';
-import './styles/scan-animation.css';
 
 const store = useShopStore();
 

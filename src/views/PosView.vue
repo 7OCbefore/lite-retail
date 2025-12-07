@@ -3,6 +3,7 @@
   import { useRouter } from 'vue-router';
   import { useShopStore } from '../stores/shopStore';
   import { showToast, showSuccessToast, showFailToast } from 'vant';
+  import IOSNavBar from '../components/IOSNavBar.vue';
   
   const router = useRouter();
   const store = useShopStore();
@@ -259,20 +260,52 @@
   </script>
   
   <template>
-    <div class="h-screen flex flex-col bg-gray-50">
-      <van-nav-bar title="收银台" left-text="返回" left-arrow @click-left="router.push('/')">
-          <template #right><span class="text-red-500" @click="store.cart = []">清空</span></template>
-      </van-nav-bar>
-  
-      <div class="p-2 bg-white relative">
-        <van-search v-model="searchKeyword" placeholder="输入名称或条码" shape="round" />
-        <div v-if="searchKeyword" class="absolute left-0 right-0 bg-white z-10 shadow-lg max-h-60 overflow-y-auto" style="top: 54px">
-          <van-cell v-for="p in searchResults" :key="p.barcode" :title="p.name" :value="'¥'+p.price" clickable @click="addItemFromSearch(p)" />
+    <div class="flex flex-col bg-ios-gray-100 h-screen">
+      <!-- iOS 风格导航栏 -->
+      <IOSNavBar 
+        title="收银台" 
+        left-text="返回" 
+        :left-arrow="true" 
+        @left-click="() => router.push('/')"
+      >
+        <template #right>
+          <button @click="store.cart = []" class="text-red-500 font-semibold text-base">
+            清空
+          </button>
+        </template>
+      </IOSNavBar>
+
+      <!-- 搜索框 -->
+      <div class="p-3 bg-ios-gray-100">
+        <div class="relative">
+          <div class="flex items-center bg-[#767680]/12 rounded-full h-12 px-4">
+            <van-icon name="search" class="text-gray-500 mr-2" />
+            <input 
+              v-model="searchKeyword" 
+              placeholder="输入名称或条码" 
+              class="flex-1 bg-transparent outline-none text-gray-900 placeholder:text-ios-gray-placeholder"
+            />
+          </div>
+        </div>
+        
+        <div v-if="searchKeyword" class="absolute left-3 right-3 bg-white z-10 shadow-lg rounded-xl max-h-60 overflow-y-auto mt-2 border border-gray-200">
+          <div 
+            v-for="p in searchResults" 
+            :key="p.barcode" 
+            class="flex items-center justify-between p-4 border-b border-gray-100 last:border-0 active:bg-gray-50 transition-colors"
+            @click="addItemFromSearch(p)"
+          >
+            <div>
+              <div class="font-medium text-gray-900">{{ p.name }}</div>
+              <div class="text-sm text-ios-gray-label">{{ p.barcode }}</div>
+            </div>
+            <div class="text-lg font-semibold text-gray-900">¥{{ p.price }}</div>
+          </div>
         </div>
       </div>
   
-      <!-- 修复：增加了高度 h-64 (256px)，以容纳更大的扫码框 -->
-      <div class="relative bg-black h-64 flex-shrink-0 overflow-hidden">
+      <!-- 扫码区域 -->
+      <div class="relative bg-black flex-shrink-0 overflow-hidden" style="height: 40vh;">
         <video ref="videoEl" class="w-full h-full object-cover" muted playsinline @click="handleVideoClick"></video>
   
         <!-- 扫码遮罩层 -->
@@ -297,37 +330,80 @@
   
           <!-- 手电筒按钮 -->
           <div class="absolute bottom-4 right-4">
-            <van-button
-              type="default"
-              round
-              size="small"
-              class="bg-white/30 backdrop-blur-sm text-white border border-white/20"
+            <button
+              class="w-12 h-12 bg-white/30 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/20 active:opacity-70"
               @click="toggleTorch"
             >
-              <i class="van-icon van-icon-light-o"></i>
-            </van-button>
+              <van-icon :name="isTorchOn ? 'descend' : 'light-o'" class="text-white text-lg" />
+            </button>
           </div>
         </div>
   
         <div class="absolute bottom-4 left-0 right-0 flex justify-center z-20 pointer-events-auto">
-          <van-button v-if="!isScanning" type="primary" round icon="scan" @click="startCamera">启动摄像头</van-button>
-          <template v-else>
-              <van-button type="default" round size="small" class="!bg-white/30 backdrop-blur-sm !text-white border border-white/20" @click="stopCamera">停止</van-button>
-          </template>
+          <button v-if="!isScanning" @click="startCamera" class="flex items-center px-6 py-3 bg-ios-blue text-white rounded-full font-medium active:opacity-90">
+            <van-icon name="scan" class="mr-2" />
+            启动摄像头
+          </button>
+          <button v-else @click="stopCamera" class="px-6 py-3 bg-white/30 backdrop-blur-sm text-white rounded-full font-medium border border-white/20 active:opacity-70">
+            停止
+          </button>
         </div>
         <div v-if="scanError" class="absolute top-0 w-full bg-red-500 text-white text-xs p-1 text-center">{{ scanError }}</div>
       </div>
   
-      <div class="flex-1 overflow-y-auto p-2 pb-20 space-y-2">
-        <van-empty v-if="store.cart.length === 0" description="请扫描商品" />
-        <van-card v-for="item in store.cart" :key="item.barcode" :price="item.price.toFixed(2)" :title="item.name" :desc="item.barcode">
-          <template #num><van-stepper v-model="item.qty" theme="round" button-size="22" disable-input /></template>
-          <template #footer><van-button size="small" @click="openEditDialog(item)">编辑</van-button></template>
-        </van-card>
+      <!-- 购物车区域 (Bottom Sheet 风格) -->
+      <div class="flex-1 overflow-hidden flex flex-col">
+        <div class="bg-white rounded-t-2xl shadow-lg flex-1 overflow-hidden flex flex-col">
+          <!-- Handle 拖动提示 -->
+          <div class="flex justify-center pt-2">
+            <div class="w-12 h-1 bg-gray-300 rounded-full"></div>
+          </div>
+          
+          <div class="flex-1 overflow-y-auto p-4">
+            <van-empty v-if="store.cart.length === 0" description="请扫描商品" class="mt-10" />
+            
+            <div 
+              v-for="item in store.cart" 
+              :key="item.barcode" 
+              class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+            >
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-gray-900 truncate">{{ item.name }}</div>
+                <div class="text-sm text-ios-gray-label">{{ item.barcode }}</div>
+              </div>
+              
+              <div class="flex items-center space-x-3">
+                <div class="text-right mr-2">
+                  <div class="font-semibold text-gray-900">¥{{ (item.price * item.qty).toFixed(2) }}</div>
+                  <div class="text-xs text-ios-gray-label">¥{{ item.price }} × {{ item.qty }}</div>
+                </div>
+                
+                <div class="flex items-center">
+                  <van-stepper v-model="item.qty" theme="round" button-size="24" disable-input class="mr-2" />
+                  <button @click="openEditDialog(item)" class="text-ios-blue text-sm font-medium">编辑</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 底部操作栏 -->
+          <div class="p-4 border-t border-gray-100">
+            <div class="flex justify-between items-center mb-4">
+              <span class="text-lg text-ios-gray-label">合计</span>
+              <span class="text-2xl font-bold text-gray-900">¥{{ (totalPriceInCents / 100).toFixed(2) }}</span>
+            </div>
+            
+            <button 
+              @click="handleCheckout" 
+              class="w-full py-4 bg-ios-blue text-white rounded-2xl font-semibold text-lg active:opacity-90"
+            >
+              收款
+            </button>
+          </div>
+        </div>
       </div>
   
-      <van-submit-bar :price="totalPriceInCents" button-text="收款" @submit="handleCheckout" />
-  
+      <!-- 编辑商品模态窗 -->
       <van-dialog v-model:show="showEditDialog" title="编辑商品" show-cancel-button @confirm="saveEdit">
         <div class="p-4 space-y-3">
           <van-field v-model="editForm.barcode" label="条码" readonly />

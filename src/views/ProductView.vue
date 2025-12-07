@@ -3,6 +3,7 @@
   import { useRouter } from 'vue-router';
   import { useShopStore } from '../stores/shopStore';
   import { showToast, showDialog } from 'vant';
+  import IOSNavBar from '../components/IOSNavBar.vue';
   
   const router = useRouter();
   const store = useShopStore();
@@ -349,17 +350,21 @@
   </script>
   
   <template>
-    <div class="min-h-screen bg-gray-50 pb-10">
-      <!-- 1. 顶部导航 -->
-      <van-nav-bar
-        title="商品库管理"
-        left-text="返回"
-        left-arrow
-        fixed
-        placeholder
-        @click-left="router.push('/')"
-      />
-  
+    <div class="min-h-screen bg-ios-gray-100 pb-10">
+      <!-- iOS 风格导航栏 -->
+      <IOSNavBar 
+        title="商品库" 
+        left-text="返回" 
+        :left-arrow="true" 
+        @left-click="() => router.push('/')"
+      >
+        <template #right>
+          <button @click="startCamera" class="text-ios-blue font-semibold text-base">
+            +
+          </button>
+        </template>
+      </IOSNavBar>
+
       <!-- 扫码摄像头弹窗 -->
       <div v-if="isScanning" class="fixed inset-0 z-50">
         <!-- 摄像头预览 -->
@@ -387,16 +392,13 @@
   
           <!-- 手电筒按钮 -->
           <div class="absolute bottom-20 w-full flex justify-center">
-            <van-button
-              type="default"
-              round
-              size="small"
-              class="bg-white/30 backdrop-blur-sm text-white border border-white/20"
+            <button
+              class="px-4 py-2 bg-white/30 backdrop-blur-sm text-white rounded-full border border-white/20 active:opacity-70 flex items-center"
               @click="toggleTorch"
             >
-              <i class="van-icon van-icon-light-o"></i>
+              <i class="van-icon van-icon-light-o mr-2"></i>
               补光
-            </van-button>
+            </button>
           </div>
         </div>
   
@@ -404,7 +406,9 @@
         <div class="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/50 to-transparent">
           <div class="flex justify-between items-center">
             <span class="text-white font-bold">扫描条形码</span>
-            <van-button type="default" size="small" class="bg-white/30 backdrop-blur-sm text-white border border-white/20" @click="stopCamera">关闭</van-button>
+            <button @click="stopCamera" class="px-3 py-1 bg-white/30 backdrop-blur-sm text-white rounded border border-white/20 active:opacity-70">
+              关闭
+            </button>
           </div>
         </div>
   
@@ -416,99 +420,111 @@
         </div>
       </div>
   
-      <!-- 2. 录入新商品区域 (折叠面板风格) -->
-      <div class="m-3 bg-white rounded-xl overflow-hidden shadow-sm" :class="isScanning ? 'hidden' : ''">
-        <div class="p-3 bg-primary/5 text-primary font-bold text-sm">
-          📝 录入新商品
+      <!-- 录入新商品区域 (iOS 风格表单) -->
+      <div class="m-3 bg-white rounded-xl overflow-hidden shadow-sm border border-gray-200" :class="isScanning ? 'hidden' : ''">
+        <div class="px-4 py-3 bg-ios-gray-100 border-b border-gray-200">
+          <h2 class="text-base font-semibold text-gray-900">📝 录入新商品</h2>
         </div>
   
-        <van-form @submit="onSubmit">
-          <van-cell-group inset>
-            <!-- 条码输入：带扫码按钮 -->
-            <van-field
-              v-model="barcode"
-              name="barcode"
-              label="条形码"
-              placeholder="扫描或输入"
-              :rules="[{ required: true, message: '请填写条码' }]"
-            >
-              <template #button>
-                <van-button size="small" type="primary" plain @click.prevent="startCamera">
-                  扫码
-                </van-button>
-              </template>
-            </van-field>
+        <div class="p-4 space-y-4">
+          <!-- 条码输入：带扫码按钮 -->
+          <div class="space-y-2">
+            <label class="block text-sm font-medium text-ios-gray-label">条形码</label>
+            <div class="flex rounded-lg border border-gray-300 overflow-hidden">
+              <input
+                v-model="barcode"
+                placeholder="扫描或输入"
+                class="flex-1 p-3 border-0 focus:ring-2 focus:ring-ios-blue focus:outline-none"
+              />
+              <button @click.prevent="startCamera" class="px-4 bg-ios-blue text-white">
+                扫码
+              </button>
+            </div>
+          </div>
   
-            <van-field
+          <div class="space-y-2">
+            <label class="block text-sm font-medium text-ios-gray-label">商品名</label>
+            <input
               v-model="name"
-              name="name"
-              label="商品名"
               placeholder="例如：可口可乐"
-              :rules="[{ required: true, message: '请填写名称' }]"
+              class="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-ios-blue focus:outline-none"
             />
+          </div>
   
-            <div class="grid grid-cols-2">
-              <van-field
+          <!-- 价格和库存并排 -->
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-2">
+              <label class="block text-sm font-medium text-ios-gray-label">价格</label>
+              <input
                 v-model="price"
-                name="price"
-                label="价格"
                 type="number"
                 placeholder="0.00"
-                :rules="[{ required: true, message: '必填' }]"
-              />
-              <van-field
-                v-model="stock"
-                name="stock"
-                label="库存"
-                type="digit"
+                class="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-ios-blue focus:outline-none"
               />
             </div>
-          </van-cell-group>
-  
-          <div class="p-4">
-            <van-button round block type="primary" native-type="submit">
-              确认添加
-            </van-button>
+            
+            <div class="space-y-2">
+              <label class="block text-sm font-medium text-ios-gray-label">库存</label>
+              <input
+                v-model="stock"
+                type="number"
+                placeholder="数量"
+                class="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-ios-blue focus:outline-none"
+              />
+            </div>
           </div>
-        </van-form>
+          
+          <button 
+            @click="onSubmit({ barcode, name, price: Number(price), stock: Number(stock) })" 
+            class="w-full py-3 bg-ios-blue text-white rounded-lg font-medium active:opacity-90"
+          >
+            确认添加
+          </button>
+        </div>
       </div>
   
-      <!-- 3. 库存列表区域 -->
-      <div class="mt-6">
-        <van-sticky :offset-top="46">
-          <van-search v-model="searchText" placeholder="搜索商品名称或条码..." shape="round" background="#f9fafb" />
-        </van-sticky>
+      <!-- 库存列表区域 -->
+      <div class="mt-1">
+        <!-- iOS 风格搜索框 -->
+        <div class="px-3 pt-2 pb-3 bg-ios-gray-100">
+          <div class="relative">
+            <div class="flex items-center bg-[#767680]/12 rounded-full h-12 px-4">
+              <van-icon name="search" class="text-gray-500 mr-2" />
+              <input 
+                v-model="searchText" 
+                placeholder="搜索商品名称或条码..." 
+                class="flex-1 bg-transparent outline-none text-gray-900 placeholder:text-ios-gray-placeholder"
+              />
+            </div>
+          </div>
+        </div>
   
-        <div class="px-2 space-y-2 mt-2">
+        <div class="mx-3 space-y-2 mt-2">
           <van-empty v-if="filteredProducts.length === 0" description="暂无商品" />
   
-          <!-- 侧滑编辑组件 -->
-          <van-swipe-cell 
-            v-for="item in filteredProducts" 
-            :key="item.barcode" 
-            class="bg-white rounded-lg overflow-hidden shadow-sm"
-          >
-            <van-cell 
-              :title="item.name" 
-              :label="item.barcode" 
-              center
+          <!-- iOS 风格列表 (Inset Grouped) -->
+          <div class="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-200">
+            <div 
+              v-for="item in filteredProducts" 
+              :key="item.barcode" 
+              class="flex items-center justify-between p-4 border-b border-gray-100 last:border-0 active:bg-gray-50 transition-colors"
+              @click="openEditDialog(item)"
             >
-              <!-- 自定义右侧内容 -->
-              <template #value>
-                <div class="flex flex-col items-end gap-1">
-                  <span class="text-primary font-bold text-lg">¥{{ item.price }}</span>
-                  <van-tag :type="item.stock < 10 ? 'danger' : 'success'">
-                    库存: {{ item.stock }}
-                  </van-tag>
-                </div>
-              </template>
-            </van-cell>
-  
-            <!-- 右侧滑动出来的按钮 -->
-            <template #right>
-              <van-button square type="primary" text="编辑" class="h-full" @click="openEditDialog(item)" />
-            </template>
-          </van-swipe-cell>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-gray-900 truncate">{{ item.name }}</div>
+                <div class="text-sm text-ios-gray-label mt-1">{{ item.barcode }}</div>
+              </div>
+              
+              <div class="flex flex-col items-end ml-4">
+                <span class="text-primary font-bold">¥{{ item.price }}</span>
+                <span class="text-xs px-2 py-1 bg-gray-100 rounded-full text-gray-600 mt-1">
+                  库存: {{ item.stock }}
+                </span>
+              </div>
+              
+              <div class="w-5 h-5 border-r-2 border-b-2 border-gray-400 transform rotate-[-45deg] ml-2"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

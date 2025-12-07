@@ -1,3 +1,6 @@
+/* iOS 风格样式 */
+@import './styles/ios-style.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
