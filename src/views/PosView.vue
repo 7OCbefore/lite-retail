@@ -20,7 +20,7 @@
   const searchResults = computed(() => {
     if (!searchKeyword.value.trim()) return [];
     const query = searchKeyword.value.trim();
-    return store.products.filter(item => {
+    return store.activeProducts.filter(item => {
       const nameMatch = item.name.toLowerCase().includes(query.toLowerCase());
       const barcodeMatch = item.barcode.includes(query);
       return nameMatch || barcodeMatch;
@@ -196,7 +196,7 @@
       } else {
         // 查询失败，更名为"未找到"
         const fallback = '未找到商品 (点击编辑)';
-        const p = store.products.find(i => i.barcode === code);
+        const p = store.products.find(i => i.barcode === code && !i.is_deleted);
         if (p && (p.name.includes('查询中') || p.name.includes('未找到'))) p.name = '未找到商品';
   
         const c = store.cart.find(i => i.barcode === code);

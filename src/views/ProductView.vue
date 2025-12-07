@@ -336,8 +336,8 @@
   
   // --- 搜索过滤 ---
   const filteredProducts = computed(() => {
-    if (!searchText.value) return store.products;
-    return store.products.filter(p =>
+    if (!searchText.value) return store.activeProducts;
+    return store.activeProducts.filter(p =>
       p.name.includes(searchText.value) || p.barcode.includes(searchText.value)
     );
   });
